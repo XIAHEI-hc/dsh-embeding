@@ -161,15 +161,10 @@ python -m pytest -q
 
 ## 9. Git 仓库
 
-交付包包含仓库源码，以及记录初始提交的 `dsh-workbench.bundle`，可完整恢复 Git 仓库：
+在线仓库：https://github.com/XIAHEI-hc/dsh-embeding.git
 
 ```bash
-git clone dsh-workbench.bundle dsh-workbench
+git clone https://github.com/XIAHEI-hc/dsh-embeding.git
 ```
 
-本次未创建 GitHub 在线仓库。创建私有空仓库后，可将这个本地仓库推送：
-
-```bash
-git remote add origin https://github.com/你的账号/dsh-workbench.git
-git push -u origin main
-```
+早期交付包曾附带 `dsh-workbench.bundle`（记录初始提交的自包含包，可离线恢复仓库：`git clone dsh-workbench.bundle dsh-workbench`）。在线仓库建立后，该文件已由 `.gitignore` 排除，仅作为本地交付产物保留，不再随仓库分发。
