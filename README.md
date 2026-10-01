@@ -119,6 +119,16 @@ docker compose logs -f workbench
 
 默认只绑定宿主机 127.0.0.1:8765；修改 `.env` 中 WORKBENCH_PORT 可改变独立服务端口。数据保存在命名卷。
 
+Compose 已为容器设置 `DSH_PERMISSION_MODE=danger-full-access`，这是模型能在容器内真正执行 bash 的必要条件。SDK 默认的 `workspace-write` 模式要求宿主提供沙箱后端（bubblewrap，或启用 Landlock 的内核）；本镜像两者都没有，容器内也没有审批通道，结果是每次 bash 调用都直接失败：
+
+```
+Error: sandbox mode "workspace-write" is requested but no sandbox backend is usable on this host;
+refusing to run the command unconfined.
+Error: sandbox escalation to "danger-full-access" requires approval, but no approval channel is available
+```
+
+此时模型会退回纯文件工具（读写、glob、edit 都正常），但**任何脚本都无法执行**，README 承诺的"执行"能力实际不可用。容器自身就是隔离边界（非 root、`cap_drop: [ALL]`、`no-new-privileges`、不挂 Docker socket、端口只绑 127.0.0.1），所以在容器内放行执行不降低既有边界。如需收紧，可在 `.env` 覆盖 `DSH_PERMISSION_MODE`（`read-only` / `workspace-write` / `danger-full-access`），但前两者在本镜像内会让 bash 不可用——除非你在 Dockerfile 里安装 bubblewrap 并放宽 seccomp。
+
 ```bash
 docker compose down
 # 保留数据卷。不要使用 down -v，除非确定删除所有会话和文件。

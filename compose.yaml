@@ -5,6 +5,12 @@ services:
     env_file: .env
     environment:
       WORKBENCH_DATA_DIR: /data
+      # SDK 的默认权限模式是 workspace-write，它需要宿主提供沙箱后端（bubblewrap /
+      # Landlock）。本镜像三者皆无，且容器内没有审批通道，因此 bash 会被全部拒绝
+      # （"no sandbox backend is usable on this host" -> escalation unavailable）。
+      # 这里容器自身就是隔离边界：非 root、cap_drop ALL、no-new-privileges、
+      # 不挂 Docker socket、端口只绑 127.0.0.1，故放行容器内执行。
+      DSH_PERMISSION_MODE: ${DSH_PERMISSION_MODE:-danger-full-access}
     ports:
       - "127.0.0.1:${WORKBENCH_PORT:-8765}:8765"
     volumes:
