@@ -1,0 +1,21 @@
+# Versions tested for v0.1.0; apply with pip -c constraints.txt.
+deepseek-harness-sdk==0.1.5rc1
+deepseek-harness-runtime-bin==0.1.5rc1
+fastapi==0.142.2
+uvicorn==0.54.0
+python-multipart==0.0.32
+python-dotenv==1.2.4
+pydantic==2.13.5
+pydantic-core==2.46.5
+starlette==1.7.0
+annotated-doc==0.0.5
+opentelemetry-api==1.45.0
+typing-extensions==4.16.0
+typing-inspection==0.4.4
+annotated-types==0.8.0
+click==8.5.0
+h11==0.16.0
+anyio==4.15.1
+idna==3.19
+pytest==9.1.1
+httpx==0.28.1

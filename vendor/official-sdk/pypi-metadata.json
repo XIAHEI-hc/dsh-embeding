@@ -1,0 +1,299 @@
+{
+  "info": {
+    "author": "DeepSeek",
+    "author_email": null,
+    "bugtrack_url": null,
+    "classifiers": [],
+    "description": "# DeepSeek Harness Python SDK\n\nEnglish | [中文](README.zh.md)\n\nPython subprocess SDK for driving DeepSeek Harness over newline-delimited JSON-RPC on stdio. Install `deepseek-harness-sdk`; it installs the exact same-version `deepseek-harness-runtime-bin` wheel for the current platform.\n\n```sh\npython -m pip install deepseek-harness-sdk\n```\n\n## Start a runtime\n\nThe Python SDK has no separate application entrypoint. It launches the bundled `dsh` CLI with `--profile sdk`; the selected profile owns the JSON-RPC server, agent composition, credentials, persistence, tools, and shutdown behavior.\n\nEvery launch requires an explicit Harness home. Pass `dsh_home` or provide a non-empty `DSH_HOME` in the child environment. The SDK deliberately never discovers `~/.dsh`.\n\n```py\nfrom deepseek_harness import DeepSeekHarness\n\nwith DeepSeekHarness(\n    dsh_home=\"/absolute/path/to/isolated-dsh-home\",\n    cwd=\"/absolute/path/to/workspace\",\n    provider=\"deepseek-official\",\n    model=\"deepseek-v4-flash\",\n    reasoning_effort=\"max\",\n    max_tokens=49_152,\n) as harness:\n    result = harness.run(\"Say hi.\", session_id=\"example-001\")\n\nprint(result.final_response)\n```\n\n`DeepSeekHarness` starts lazily and reuses its runtime until `close()` or context-manager exit. The initial profile handshake has an independent 30-second default bound through `initialize_timeout_seconds`; ordinary turns remain unbounded unless `request_timeout_seconds` is set. A timeout names the selected profile and includes retained runtime diagnostics. `cwd` is the agent workspace; `runtime_cwd` independently selects the subprocess working directory. Both become absolute before launch. `provider`, `model`, optional `reasoning_effort`, and optional positive `max_tokens` are sent during JSON-RPC initialization. `base_url` and `api_key` explicitly override `DEEPSEEK_BASE_URL` and `DEEPSEEK_API_KEY` in the child environment.\n\n## Customize plugins\n\nPersistent customization belongs to a `dsh` profile. Initialize the shipped SDK profile and install an external bundle with the runtime wheel's `dsh` command:\n\n```sh\nexport DSH_HOME=/absolute/path/to/isolated-dsh-home\ndsh --profile sdk --dump-default-config >/dev/null\ndsh plugin --profile sdk add file:/absolute/path/to/my-plugin-bundle\n```\n\nThe `file:` form installs the local bundle into the profile package tree, where its peer imports reach the bundled installation fallback. The profile manifest records installed dependencies and ordered bundle layers; its `$DSH_HOME/profiles/sdk/cordis.patch.yml` is the persistent user patch. `dsh plugin` needs `pnpm` only when managing external packages. Running the SDK does not require system Node.js.\n\nFor an invocation-specific change, pass one or more patch files. They become absolute and are forwarded in order after the profile and home patch layers:\n\n```py\nwith DeepSeekHarness(\n    dsh_home=\"/absolute/path/to/isolated-dsh-home\",\n    profile=\"sdk\",\n    patches=(\"/absolute/path/to/first.patch.yml\", \"/absolute/path/to/last.patch.yml\"),\n) as harness:\n    result = harness.run(\"Make the requested code change.\")\n```\n\n`profile` may select another existing profile, but that composition must retain `@deepseek-ai/dsh-sdk-app` or another `@deepseek-ai/dsh-sdk-jsonrpc-server` row. Misconfiguration fails during CLI boot or SDK initialization; there is no complete-config fallback. `dsh_bin` may select another `dsh` executable while preserving the same profile grammar. Arbitrary argv replacement remains an internal fake-runtime test adapter, not public API.\n\n`provider` selects a provider route registered by the chosen Cordis composition; `model` is the model id resolved by that adapter. `reasoning_effort` is an optional non-empty adapter-owned identifier for that exact route; omission preserves the model's own default. `max_tokens` is an optional positive per-request output-token cap for the root agent and its in-process descendants; omission leaves the provider default in control. Initialization rejects a missing adapter, unavailable model, or unsupported effort before a prompt runs. Compaction summaries keep the separate limit configured by their compaction plugin. The bundled default composition registers `deepseek-official`. A custom composition can mount `llm-pi-ai`, configure provider-specific credentials/endpoints there, and select any provider/model present in pi-ai's installed catalog.\n\nThe shipped `sdk-minimal` profile is a standalone explicit tree rather than an overlay on `dsh-base`. Select it with `profile=\"sdk-minimal\"`; the ordinary `model` argument is the sole runtime model selection, including for model ids outside the adapter's advisory catalog. It provides only a platform-selected persistent shell, local execution, and JSONL sessions; filesystem tools, settings, managed credentials, telemetry, Web tools, and the full default tool roster remain available through the separate full `sdk` and `web` profiles.\n\n## Results and notifications\n\n`Session.run()` owns an activity interval from its prompt's durable inbox receipt through the next whole-agent idle and returns `RunResult(session_id, final_response, finish_reason, events, notifications)`. `final_response` is the last committed root-session assistant text in the interval. `finish_reason` is the `kind` of the last root-session `turn/end`, such as `completed`, `max-tokens`, or `error`, and is `None` when no turn ended. A `turn/end` without a string `data.reason.kind` violates the protocol and raises `SdkProtocolError`.\n\n`HarnessClient` retains discovered subagent ancestry for the runtime process lifetime. During `Session.run()`, `RunResult.notifications` and `on_notification` receive the root session and known descendants in wire order. `RunResult.events` contains root-session events only, so descendant output cannot replace the root response. The low-level `session_prompt()` returns the queued message id immediately; callers that bypass `Session.run()` own the later activity boundary.\n\nThe selected home stores profiles, plugins, and every profile-owned durable resource. The full `sdk` profile uses its credentials, settings, and session stores; `sdk-minimal` uses only its JSONL session store. Use a fresh home when those resources must be isolated, and a fresh session id for independent work. Reusing both a harness and session id continues the durable conversation and session-owned resources.\n\nSee the [Python tutorial](../../docs/user/guide/python-sdk.md), [runnable example](examples/README.md), and [runtime wheel reference](../sdk-runtime/README.md).\n",
+    "description_content_type": "text/markdown",
+    "docs_url": null,
+    "download_url": null,
+    "downloads": {
+      "last_day": -1,
+      "last_month": -1,
+      "last_week": -1
+    },
+    "dynamic": null,
+    "home_page": null,
+    "keywords": null,
+    "license": null,
+    "license_expression": "MIT",
+    "license_files": [
+      "LICENSE"
+    ],
+    "maintainer": null,
+    "maintainer_email": null,
+    "name": "deepseek-harness-sdk",
+    "package_url": "https://pypi.org/project/deepseek-harness-sdk/",
+    "platform": null,
+    "project_url": "https://pypi.org/project/deepseek-harness-sdk/",
+    "project_urls": {
+      "Documentation": "https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/python-sdk.md",
+      "Homepage": "https://github.com/deepseek-ai/deepseek-harness",
+      "Issues": "https://github.com/deepseek-ai/deepseek-harness/issues",
+      "Source": "https://github.com/deepseek-ai/deepseek-harness"
+    },
+    "provides_extra": null,
+    "release_url": "https://pypi.org/project/deepseek-harness-sdk/0.1.5rc1/",
+    "requires_dist": [
+      "deepseek-harness-runtime-bin==0.1.5rc1",
+      "pydantic<3,>=2.12"
+    ],
+    "requires_python": ">=3.10",
+    "summary": "Python SDK for DeepSeek Harness",
+    "version": "0.1.5rc1",
+    "yanked": false,
+    "yanked_reason": null
+  },
+  "last_serial": 40918520,
+  "ownership": {
+    "organization": null,
+    "roles": [
+      {
+        "role": "Owner",
+        "user": "DeepSeek-Harness"
+      },
+      {
+        "role": "Owner",
+        "user": "tianyicui"
+      },
+      {
+        "role": "Maintainer",
+        "user": "koalazf99"
+      }
+    ]
+  },
+  "releases": {
+    "0.0.0.dev0": [
+      {
+        "comment_text": null,
+        "core-metadata": {
+          "sha256": "d1afe793231f0ee8feceba3e8eab7fe06837ce17e0ab2f8247090be166188a9a"
+        },
+        "digests": {
+          "blake2b_256": "4a5b2dea67647ac680a7272a03d9b51ce2565ac61b72fbeef4a9489257043481",
+          "md5": "063229ed641899b76bbf1c717bf9073a",
+          "sha256": "aa84d21f1994a75dc6fca50a8e0953b5f75fe375cdc17265888feb91f4099d3b"
+        },
+        "downloads": -1,
+        "filename": "deepseek_harness_sdk-0.0.0.dev0-py3-none-any.whl",
+        "has_sig": false,
+        "md5_digest": "063229ed641899b76bbf1c717bf9073a",
+        "packagetype": "bdist_wheel",
+        "python_version": "py3",
+        "requires_python": ">=3.10",
+        "size": 1424,
+        "upload_time": "2026-08-11T12:52:55",
+        "upload_time_iso_8601": "2026-08-11T12:52:55.381293Z",
+        "url": "https://files.pythonhosted.org/packages/4a/5b/2dea67647ac680a7272a03d9b51ce2565ac61b72fbeef4a9489257043481/deepseek_harness_sdk-0.0.0.dev0-py3-none-any.whl",
+        "yanked": false,
+        "yanked_reason": null
+      },
+      {
+        "comment_text": null,
+        "core-metadata": false,
+        "digests": {
+          "blake2b_256": "f5eb4b2d294a33a09fb7d4d60294d70c8660aac296d32075d75560c0462c225b",
+          "md5": "d99a9a762ca7d508db4990d99adcb11d",
+          "sha256": "d1153a0a3b57ba59d14009688baf3f366563d54ad7fef7a4ad2af3e1a07c0f63"
+        },
+        "downloads": -1,
+        "filename": "deepseek_harness_sdk-0.0.0.dev0.tar.gz",
+        "has_sig": false,
+        "md5_digest": "d99a9a762ca7d508db4990d99adcb11d",
+        "packagetype": "sdist",
+        "python_version": "source",
+        "requires_python": ">=3.10",
+        "size": 1080,
+        "upload_time": "2026-08-11T12:52:57",
+        "upload_time_iso_8601": "2026-08-11T12:52:57.308534Z",
+        "url": "https://files.pythonhosted.org/packages/f5/eb/4b2d294a33a09fb7d4d60294d70c8660aac296d32075d75560c0462c225b/deepseek_harness_sdk-0.0.0.dev0.tar.gz",
+        "yanked": false,
+        "yanked_reason": null
+      }
+    ],
+    "0.1.0rc6": [
+      {
+        "comment_text": null,
+        "core-metadata": {
+          "sha256": "3858480aff3a42b21fb26160341bd8b566ea4934712181d5341184b07bdc455b"
+        },
+        "digests": {
+          "blake2b_256": "4710efd7ad88cd6140be4883d055abf9acd7fa8e5424a20de8a224d310e67f2f",
+          "md5": "cfa69176c9b3889c78b21b6f3c5fe1e9",
+          "sha256": "8a05421be4298196cf94383e0a3164b020f5f5977a8d30019cc5add64cb208eb"
+        },
+        "downloads": -1,
+        "filename": "deepseek_harness_sdk-0.1.0rc6-py3-none-any.whl",
+        "has_sig": false,
+        "md5_digest": "cfa69176c9b3889c78b21b6f3c5fe1e9",
+        "packagetype": "bdist_wheel",
+        "python_version": "py3",
+        "requires_python": ">=3.10",
+        "size": 12880,
+        "upload_time": "2026-08-13T12:52:09",
+        "upload_time_iso_8601": "2026-08-13T12:52:09.047496Z",
+        "url": "https://files.pythonhosted.org/packages/47/10/efd7ad88cd6140be4883d055abf9acd7fa8e5424a20de8a224d310e67f2f/deepseek_harness_sdk-0.1.0rc6-py3-none-any.whl",
+        "yanked": false,
+        "yanked_reason": null
+      }
+    ],
+    "0.1.0rc7": [
+      {
+        "comment_text": null,
+        "core-metadata": {
+          "sha256": "02be8d8852864932a432e23e9efc4e6815ef395ac9eea6371df494a55c08dd6b"
+        },
+        "digests": {
+          "blake2b_256": "515e86d118a15ad0f5b42933fb7162420b60b7cc53a4739da272a5204501e009",
+          "md5": "85e19408b2538004e6c14fc1a7e25572",
+          "sha256": "5327d60659d8802442d2c589c89c3528cf18eb07b5d698059c833eb6b853b7d4"
+        },
+        "downloads": -1,
+        "filename": "deepseek_harness_sdk-0.1.0rc7-py3-none-any.whl",
+        "has_sig": false,
+        "md5_digest": "85e19408b2538004e6c14fc1a7e25572",
+        "packagetype": "bdist_wheel",
+        "python_version": "py3",
+        "requires_python": ">=3.10",
+        "size": 12881,
+        "upload_time": "2026-08-18T02:05:09",
+        "upload_time_iso_8601": "2026-08-18T02:05:09.933245Z",
+        "url": "https://files.pythonhosted.org/packages/51/5e/86d118a15ad0f5b42933fb7162420b60b7cc53a4739da272a5204501e009/deepseek_harness_sdk-0.1.0rc7-py3-none-any.whl",
+        "yanked": false,
+        "yanked_reason": null
+      }
+    ],
+    "0.1.1rc1": [
+      {
+        "comment_text": null,
+        "core-metadata": {
+          "sha256": "9c4372b80298aa463124457aa3e4965cd01f2c2e356c5d360c0a97bff1e32d75"
+        },
+        "digests": {
+          "blake2b_256": "92952cb97bcac85a3787b4b3a7f497a559e3a161c167bbe97e38c66464cd823b",
+          "md5": "fb81fda0c1f88e59332ce10eaec918b8",
+          "sha256": "2113aec229039da435bc44b275b487216d2b1c308d850521b88cea6ce3c1b762"
+        },
+        "downloads": -1,
+        "filename": "deepseek_harness_sdk-0.1.1rc1-py3-none-any.whl",
+        "has_sig": false,
+        "md5_digest": "fb81fda0c1f88e59332ce10eaec918b8",
+        "packagetype": "bdist_wheel",
+        "python_version": "py3",
+        "requires_python": ">=3.10",
+        "size": 12878,
+        "upload_time": "2026-08-21T07:16:01",
+        "upload_time_iso_8601": "2026-08-21T07:16:01.653610Z",
+        "url": "https://files.pythonhosted.org/packages/92/95/2cb97bcac85a3787b4b3a7f497a559e3a161c167bbe97e38c66464cd823b/deepseek_harness_sdk-0.1.1rc1-py3-none-any.whl",
+        "yanked": false,
+        "yanked_reason": null
+      }
+    ],
+    "0.1.2a3": [
+      {
+        "comment_text": null,
+        "core-metadata": {
+          "sha256": "f5c7777e0f139547eaeb9e52586ff2c5eff5dfba9e995988fc42b037a48b0ee1"
+        },
+        "digests": {
+          "blake2b_256": "cd54c37b73a5a06a1ac9fd797b19d304dcc79b753dd2345838909e370e03d1cc",
+          "md5": "a04e7bffdf2d6700ee8cdd5d83d97f54",
+          "sha256": "3c8b09f5b3ffd7322afb05bc30b365b86479ac1cd2017884d2c583900eca73ec"
+        },
+        "downloads": -1,
+        "filename": "deepseek_harness_sdk-0.1.2a3-py3-none-any.whl",
+        "has_sig": false,
+        "md5_digest": "a04e7bffdf2d6700ee8cdd5d83d97f54",
+        "packagetype": "bdist_wheel",
+        "python_version": "py3",
+        "requires_python": ">=3.10",
+        "size": 13683,
+        "upload_time": "2026-09-01T07:30:03",
+        "upload_time_iso_8601": "2026-09-01T07:30:03.814669Z",
+        "url": "https://files.pythonhosted.org/packages/cd/54/c37b73a5a06a1ac9fd797b19d304dcc79b753dd2345838909e370e03d1cc/deepseek_harness_sdk-0.1.2a3-py3-none-any.whl",
+        "yanked": false,
+        "yanked_reason": null
+      }
+    ],
+    "0.1.2rc1": [
+      {
+        "comment_text": null,
+        "core-metadata": {
+          "sha256": "e33bb5ac659afa5a2d9bf43a7cc39b112e5552db8d23dedd7140797cef1f8472"
+        },
+        "digests": {
+          "blake2b_256": "d7380220769bc89ca29318a8f09c30390095aaa071ae2116f677e8398763390e",
+          "md5": "9d4d969ab80c4099cda68972a4b96bd4",
+          "sha256": "24689eec01e95233feb75ca08a0fe748b491e71682f80d2c04e6f9485f20488a"
+        },
+        "downloads": -1,
+        "filename": "deepseek_harness_sdk-0.1.2rc1-py3-none-any.whl",
+        "has_sig": false,
+        "md5_digest": "9d4d969ab80c4099cda68972a4b96bd4",
+        "packagetype": "bdist_wheel",
+        "python_version": "py3",
+        "requires_python": ">=3.10",
+        "size": 13692,
+        "upload_time": "2026-09-04T03:16:35",
+        "upload_time_iso_8601": "2026-09-04T03:16:35.457017Z",
+        "url": "https://files.pythonhosted.org/packages/d7/38/0220769bc89ca29318a8f09c30390095aaa071ae2116f677e8398763390e/deepseek_harness_sdk-0.1.2rc1-py3-none-any.whl",
+        "yanked": false,
+        "yanked_reason": null
+      }
+    ],
+    "0.1.5rc1": [
+      {
+        "comment_text": null,
+        "core-metadata": {
+          "sha256": "83e3b832ed328acc1b98a27600fba98047baf61df3557aff3fb7f4cb690ecbd2"
+        },
+        "digests": {
+          "blake2b_256": "eefa9b3e2a449f876211fdcbd8082edcf70f0ead08617aa4e064a9bb14372291",
+          "md5": "46fac0067bfe50a167569d8b677e3342",
+          "sha256": "8d9897e97e8a95fd738cb2c3e2c563951d824e43847ec6f3b0fb172c0729b4d8"
+        },
+        "downloads": -1,
+        "filename": "deepseek_harness_sdk-0.1.5rc1-py3-none-any.whl",
+        "has_sig": false,
+        "md5_digest": "46fac0067bfe50a167569d8b677e3342",
+        "packagetype": "bdist_wheel",
+        "python_version": "py3",
+        "requires_python": ">=3.10",
+        "size": 13694,
+        "upload_time": "2026-09-10T05:55:48",
+        "upload_time_iso_8601": "2026-09-10T05:55:48.883466Z",
+        "url": "https://files.pythonhosted.org/packages/ee/fa/9b3e2a449f876211fdcbd8082edcf70f0ead08617aa4e064a9bb14372291/deepseek_harness_sdk-0.1.5rc1-py3-none-any.whl",
+        "yanked": false,
+        "yanked_reason": null
+      }
+    ]
+  },
+  "urls": [
+    {
+      "comment_text": null,
+      "core-metadata": {
+        "sha256": "83e3b832ed328acc1b98a27600fba98047baf61df3557aff3fb7f4cb690ecbd2"
+      },
+      "digests": {
+        "blake2b_256": "eefa9b3e2a449f876211fdcbd8082edcf70f0ead08617aa4e064a9bb14372291",
+        "md5": "46fac0067bfe50a167569d8b677e3342",
+        "sha256": "8d9897e97e8a95fd738cb2c3e2c563951d824e43847ec6f3b0fb172c0729b4d8"
+      },
+      "downloads": -1,
+      "filename": "deepseek_harness_sdk-0.1.5rc1-py3-none-any.whl",
+      "has_sig": false,
+      "md5_digest": "46fac0067bfe50a167569d8b677e3342",
+      "packagetype": "bdist_wheel",
+      "python_version": "py3",
+      "requires_python": ">=3.10",
+      "size": 13694,
+      "upload_time": "2026-09-10T05:55:48",
+      "upload_time_iso_8601": "2026-09-10T05:55:48.883466Z",
+      "url": "https://files.pythonhosted.org/packages/ee/fa/9b3e2a449f876211fdcbd8082edcf70f0ead08617aa4e064a9bb14372291/deepseek_harness_sdk-0.1.5rc1-py3-none-any.whl",
+      "yanked": false,
+      "yanked_reason": null
+    }
+  ],
+  "vulnerabilities": []
+}

@@ -1,0 +1,7 @@
+die_x,die_y,site,value,status
+20,10,0,101.2,PASS
+21,10,1,100.7,PASS
+22,10,2,150.4,FAIL
+20,11,0,99.8,PASS
+21,11,1,,FAIL
+22,11,2,102.1,PASS
