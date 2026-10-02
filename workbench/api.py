@@ -4,7 +4,6 @@ from importlib.metadata import version, PackageNotFoundError
 from pathlib import Path
 from fastapi import FastAPI, Depends, Header, HTTPException, UploadFile, File, Query
 from fastapi.responses import FileResponse, Response
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from .config import Settings
 from .service import Workbench, MAX_FILE
@@ -93,5 +92,8 @@ def create_app(settings=None, factory=None):
         response.headers['Cache-Control'] = 'no-store'
         response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'"
         return response
-    app.mount('/', StaticFiles(directory=Path(__file__).parent/'static',html=True), name='ui')
+    # Legacy SDK API is retained for integrations/tests, not served by the web command.
+    @app.get('/')
+    def retired():
+        return {'detail':'请使用 python -m workbench.cli web 启动完整官方 DSH Web'}
     return app

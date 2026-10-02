@@ -10,6 +10,8 @@ def main():
     web = sub.add_parser('web', help='启动独立网页')
     web.add_argument('--host',default='127.0.0.1')
     web.add_argument('--port',type=int,default=8765)
+    web.add_argument('--upstream-port',type=int,default=18765)
+    web.add_argument('--trusted-host',action='append',default=[])
     web.add_argument('--reload',action='store_true')
     chat = sub.add_parser('chat',help='命令行任务或交互对话')
     chat.add_argument('prompt',nargs='?')
@@ -19,9 +21,15 @@ def main():
     args = p.parse_args()
     settings = Settings.load()
     if args.command == 'web':
-        import uvicorn
-        uvicorn.run('workbench.api:create_app',factory=True,host=args.host,port=args.port,reload=args.reload)
-        return
+        if args.reload:
+            p.error('--reload 属于旧版网页；官方 Web 插件源码开发请使用官方 dev:web 工作流')
+        import subprocess
+        from .official_web import serve
+        try:
+            code = serve(args.host,args.port,args.upstream_port,args.trusted_host)
+        except (RuntimeError,ValueError,OSError,subprocess.SubprocessError) as e:
+            print(str(e),file=sys.stderr); sys.exit(1)
+        sys.exit(code)
     if args.command == 'doctor':
         import importlib.metadata
         try:
@@ -30,7 +38,7 @@ def main():
         except importlib.metadata.PackageNotFoundError as e:
             print('缺少依赖:',e); sys.exit(1)
         print(json.dumps({'sdk':sdk,'runtime':runtime,'model':settings.model,'profile':settings.profile,
-                          'api_key_configured':bool(settings.api_key),'web_token_valid':len(settings.token)>=24,
+                          'api_key_configured':bool(settings.api_key),'web_distribution':'npm @deepseek-ai/dsh 0.2.0-rc.2',
                           'data_dir':str(settings.data_dir)},ensure_ascii=False,indent=2))
         return
     app = Workbench(settings)

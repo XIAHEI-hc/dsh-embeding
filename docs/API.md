@@ -1,3 +1,7 @@
+# 旧 Python SDK 兼容 API
+
+以下接口属于保留的 `workbench.api`，不再是独立网页后端。官方 Web 使用官方发行包自带的协议，不能用这些接口替换其 WebSocket 或会话事件。
+
 # API
 
 所有 `/api/*` 请求需要 `Authorization: Bearer <WORKBENCH_TOKEN>`。

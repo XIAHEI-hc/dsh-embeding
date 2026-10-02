@@ -1,7 +1,14 @@
-FROM python:3.12-slim
-RUN apt-get update && apt-get install -y --no-install-recommends bash git ca-certificates && rm -rf /var/lib/apt/lists/*
+FROM node:24-bookworm-slim AS official-web
 WORKDIR /app
-COPY pyproject.toml constraints.txt ./
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund && npm install --global pnpm@10.12.1
+
+FROM python:3.12-slim-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends bash git ca-certificates nginx libstdc++6 && rm -rf /var/lib/apt/lists/*
+COPY --from=official-web /usr/local/ /usr/local/
+COPY --from=official-web /app/node_modules /app/node_modules
+WORKDIR /app
+COPY package.json package-lock.json pyproject.toml constraints.txt ./
 COPY workbench ./workbench
 COPY vendor/official-sdk ./vendor/official-sdk
 RUN pip install -c constraints.txt --no-cache-dir ./vendor/official-sdk/*.whl .

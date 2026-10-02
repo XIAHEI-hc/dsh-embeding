@@ -1,11 +1,11 @@
-# 第一次真实执行
+# 官方 Web 首次验收
 
-网页创建会话并上传 examples/sample.csv，然后发送：
+启动 `python -m workbench.cli web`，用日志中的 token 地址登录，在 Settings → Models 填凭据。
 
-> 读取 input/sample.csv，用 Python 统计有效 value 的均值、缺失数量，以及按 site 分组的 PASS/FAIL 数量。脚本保存到 scripts/analyze.py 并真实执行；把结果写到 output/summary.csv 和 output/report.md。不要只给代码，请检查文件是否生成并报告路径。
+1. 创建会话，要求生成并执行脚本，将结果写入 `output/result.txt`。
+2. 查看 Trajectory，检查真实工具执行记录和最终文件。
+3. 第二轮修改脚本并执行，确认文件内容改变。
+4. 用官方文件展示打开产物；上传 CSV 并生成报告。
+5. 重启服务后恢复会话，确认工作区文件和模型设置保留。
 
-第二轮发送：
-
-> 修改刚才的脚本：排除 FAIL 行后重新计算 value 均值，并在报告里同时展示原始均值和过滤后的均值。真实重新执行，更新两个输出文件。
-
-验收：有效 value 原始均值 110.84，PASS 行均值 100.95，缺失数量 1。打开真实产物核对，允许展示精度不同。SDK/runtime 初始化通过不等于这项业务验收通过。
+浏览器夹具验收见 README；真实模型验收需要部署环境凭据。旧 SDK 会话继续通过 CLI 读取。

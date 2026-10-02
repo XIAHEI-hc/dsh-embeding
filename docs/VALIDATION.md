@@ -1,29 +1,30 @@
-# 验证记录 · 2026-10-01
+# v0.2 验证记录 · 2026-10-02
 
 ## 已完成
 
-- 官方 Python SDK wheel SHA-256 与 PyPI metadata 一致。
-- 实际安装 `deepseek-harness-sdk==0.1.5rc1` 和 Linux x64 `deepseek-harness-runtime-bin==0.1.5rc1`。
-- 使用真实 SDK 启动真实官方运行时，执行 initialize 握手并关闭：PASS。此检查没有发送模型推理任务，使用测试占位凭据，不能证明 API Key、模型或出网推理可用。
-- 应用 editable 安装成功；Python compileall、前端 node --check 成功。
-- 9 项自动测试通过：鉴权、完整文件/API工作流与事件恢复、越界及符号链接拦截、并发与执行期写入拦截、失败脱敏与重试、缺密钥与服务重启恢复、非完成结果状态、真实 SDK 参数兼容、运行时关闭失败阻止重试。
-- FastAPI 启动并正常响应；静态页面和实际 API 的无密钥错误反馈经过接口测试。
+- 固定安装完整 `@deepseek-ai/dsh@0.2.0-rc.2` 官方 npm 发行包及锁定依赖；官方包未修改。
+- Python SDK / runtime `0.1.5rc1` 保留；原 9 项 Python 回归测试全部通过，compileall 与 git diff --check 通过。
+- 实际 Chromium 浏览器验收，运行真实官方 Web 服务，不使用替代前端：
+  - 首次 Preview 提示、官方 token → Cookie 登录，地址栏清除 token。
+  - Settings 中主题、字体、Coding View，以及模型 API Key / Base URL 保存。
+  - 第三方模型提供商与 Custom model API 入口存在。
+  - 本地模型 SSE 夹具逐段输出，页面在最终片段到达前已展示首段，排除整段缓冲。
+  - 官方 bash 工具实际执行，生成 `output/report.md`，检查磁盘文件内容。
+  - 官方模型循环收到成功的 tool_result；点击回复中的文件链接，右侧 Markdown 预览展示真实文件内容。
+  - 官方 WebSocket 收到事件；刷新页面后会话和文件链接保留；没有 pageerror。
+- 上述完整浏览器链路在本地直连和 Nginx 代理模式均通过；代理保持 Host/Origin，禁用缓冲。Nginx 的全部临时目录改为可写临时路径。
+- 截图：[官方文件预览](screenshots/official-web.png)、[Nginx 模式](screenshots/official-web-proxy.png)。
+
+可重复命令见 README。`scripts/web-smoke.cjs` 内的模型夹具只供测试，生产仍直接运行官方服务、使用用户配置的真实模型。
 
 ## 尚未完成
 
-- 无真实模型 API Key，未执行收费推理；连续对话、AI 文件修改和脚本执行的完整验收需用户部署后完成。
-- 环境没有 Docker，Compose build/up 未执行。
-- Playwright 浏览器二进制缺失，尝试下载得到损坏的零字节压缩包，无法进行浏览器交互或截图验收。未将浏览器验证标记为通过。
-- 未在 Windows/macOS 实际安装运行。
+- 本轮未使用用户真实模型凭据；夹具验证协议、流式和真实工具执行，不证明模型推理质量或公网模型可用性。
+- 当前执行环境没有 Docker，未执行实际镜像 build / Compose up。已单独运行容器入口相同的 Nginx + 官方服务验证，仍需部署环境完成镜像验收。
+- Windows / macOS 未实际运行；iframe、Ezprober 身份集成、每会话独立沙箱尚未实现。
 
-## 用户真实模型验收
+## 历史验证
 
-1. 安装、配置 .env；doctor 确认 SDK/runtime 版本，网页令牌和模型密钥已配置。
-2. CLI 让 AI 创建 scripts/sum.py、执行并写 output/result.txt；检查内容为 5050。
-3. 相同会话继续改为 1..1000，检查结果为 500500。
-4. 网页创建会话、上传 CSV；让 AI 生成报告与结果 CSV，检查真实文件。
-5. 重启网页服务，继续相同会话，确认 SDK 恢复上下文。
-6. 测试错误凭据、模型不可用、任务超时，不得把失败显示成 completed。
-7. Docker 部署重复上述验证；确认关闭重开容器数据仍在。
+前版已核对官方 Python wheel 哈希、真实 SDK initialize/close；用户此前在容器真实模型任务中验证了脚本执行生成 5050，因此保留其 `danger-full-access` 配置。
 
-接口测试的 FakeRuntime 仅位于 tests/，用于可重复验证，不是生产执行后端。
+Python runtime `0.1.5rc1` 的直接 Web 启动缺少 session-title 插件依赖。本版使用 npm 完整 Web 发行包，Python SDK 专供原 CLI，两者配置和会话存储独立。
