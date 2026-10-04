@@ -69,6 +69,7 @@ http {{
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection $connection_upgrade;
             proxy_set_header Origin $http_origin;
+            proxy_set_header X-Forwarded-Proto $scheme;
             # No browser origin or credential substitution: official trust stays authoritative.
             proxy_buffering off;
             proxy_request_buffering off;
@@ -107,9 +108,26 @@ def serve(host, port, upstream_port=18765, trusted_hosts=()):
     home = Path(os.getenv('WORKBENCH_WEB_HOME', str(data / 'web/dsh-home'))).resolve()
     workspace = Path(os.getenv('WORKBENCH_WEB_WORKSPACE', str(data / 'web/workspace'))).resolve()
     home.mkdir(parents=True, exist_ok=True); workspace.mkdir(parents=True, exist_ok=True)
-    env = os.environ.copy(); env['DSH_HOME'] = str(home)
+    env = os.environ.copy(); env['DSH_HOME'] = str(home); env['WORKBENCH_PUBLIC_URL'] = exposed
     bootstrap = home / 'workbench-web.patch.json'
-    bootstrap.write_text(json.dumps([{'id':'workspace-controller','config':{'documentsDirectory':str(workspace),'documentsLookupTimeoutMs':10000}}],ensure_ascii=False))
+    patches = [{'id':'workspace-controller','config':{
+        'documentsDirectory':str(workspace),'documentsLookupTimeoutMs':10000}}]
+    embed_value = os.getenv('WORKBENCH_EMBED_ENABLED', 'false').strip().lower()
+    if embed_value not in ('true', 'false', '1', '0', ''):
+        raise ValueError('WORKBENCH_EMBED_ENABLED 必须是 true/false 或 1/0')
+    extensions_enabled = bool(os.getenv('WORKBENCH_WORKSPACE_CONFIG')) or embed_value in ('true', '1')
+    if extensions_enabled:
+        extension = Path(__file__).resolve().parent.parent / 'node_modules/@dsh-workbench/extensions/package.json'
+        if not extension.is_file():
+            raise RuntimeError('工作台扩展未安装，请在仓库根目录运行 npm ci')
+        # A file URL bypasses profile package-governance for this repository-owned
+        # plugin; client-modules still discovers its nearest package.json.
+        patches.append({'insert':[{'id':'workbench-extensions','name':(extension.parent / 'src/index.js').as_uri()}]})
+    if embed_value in ('true', '1'):
+        if not os.getenv('WORKBENCH_WORKSPACE_CONFIG') or not os.getenv('WORKBENCH_EMBED_CONFIG'):
+            raise ValueError('启用嵌入时必须设置 WORKBENCH_WORKSPACE_CONFIG 和 WORKBENCH_EMBED_CONFIG')
+        patches.append({'id':'connection','config':{'cookieSecure':urlsplit(exposed).scheme == 'https'}})
+    bootstrap.write_text(json.dumps(patches,ensure_ascii=False))
     nginx = None
     if proxy:
         nginx = shutil.which('nginx')
@@ -123,6 +141,7 @@ def serve(host, port, upstream_port=18765, trusted_hosts=()):
         if not re.fullmatch(r'[A-Za-z0-9.\-:\[\]]+', authority_value): raise ValueError('trusted-host 不合法')
         command += ['--trusted-host', authority_value]
     ready = threading.Event()
+    extension_failed = threading.Event()
     native = front = None
     stopping = threading.Event()
     def interrupt(signum, frame): stopping.set()
@@ -142,6 +161,8 @@ def serve(host, port, upstream_port=18765, trusted_hosts=()):
                                   start_new_session=os.name == 'posix')
         def output():
             for line in native.stdout:
+                if extensions_enabled and 'workbench-extensions (' in line:
+                    extension_failed.set()
                 if re.search(r'dsh web:\s+https?://', line):
                     # The official one-time token and cookie exchange are kept unchanged.
                     if proxy:
@@ -154,6 +175,8 @@ def serve(host, port, upstream_port=18765, trusted_hosts=()):
             if stopping.is_set(): return 0
             if native.poll() is not None: return native.returncode or 1
             if time.monotonic() > deadline: raise RuntimeError('官方 DSH Web 在 90 秒内未就绪，请检查上方诊断')
+        if extension_failed.is_set():
+            raise RuntimeError('工作台扩展未能激活，请检查上方 workbench-extensions 诊断')
         if proxy:
             front = subprocess.Popen([nginx, '-c', str(conf), '-p', temporary, '-g', 'daemon off;'],
                                      start_new_session=os.name == 'posix')

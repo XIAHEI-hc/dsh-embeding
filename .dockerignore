@@ -5,6 +5,7 @@ data
 __pycache__
 .pytest_cache
 tests
+tests-js
 
 node_modules
 web-acceptance-data

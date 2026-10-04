@@ -1,0 +1,10 @@
+[
+  {
+    "insert": [
+      {
+        "id": "workbench-extensions",
+        "name": "@dsh-workbench/extensions"
+      }
+    ]
+  }
+]

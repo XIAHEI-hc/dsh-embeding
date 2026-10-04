@@ -1,0 +1,25 @@
+# 可选 Compose override；不会替换原 ports/data volume。
+services:
+  workbench:
+    environment:
+      WORKBENCH_WORKSPACE_CONFIG: /app/config/workspaces.json
+      WORKBENCH_EMBED_CONFIG: /app/config/embed.json
+      WORKBENCH_EMBED_ENABLED: "false"
+    volumes:
+      - type: bind
+        source: ${DSH_PROJECT_A_HOST_PATH:?请设置已有的宿主项目目录}
+        target: /workspaces/project-a
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DSH_REFERENCE_HOST_PATH:?请设置已有的只读数据目录}
+        target: /workspaces/reference-data
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./config
+        target: /app/config
+        read_only: true
+        bind:
+          create_host_path: false

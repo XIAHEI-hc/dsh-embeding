@@ -1,12 +1,16 @@
-# DSH Embedding · 官方 Web + Python SDK
+# DSH 通用工作区与同站点嵌入
 
-独立网页现在直接运行 **官方 `@deepseek-ai/dsh@0.2.0-rc.2` 完整发行包**，同时保留官方 Python SDK `0.1.5rc1` 的命令行入口。原先自写的聊天页面已移除。界面、会话协议、流式输出、工具调用、文件展示、模型配置、插件和工作区管理均由官方实现；本仓库负责安装、启动、持久化目录和容器入口。
+本仓库运行完整的官方 `@deepseek-ai/dsh@0.2.0-rc.2` Web，并保留官方 Python SDK `0.1.5rc1` 命令行入口。官方界面、会话协议、流式输出、工具调用、文件面板、模型设置和插件系统不被替换；仓库在官方扩展点上增加受控工作区、一次性嵌入票据和同站点 iframe 导航。
 
-这一步先完成独立运行与官方扩展基础，Ezprober / iframe 接入放在下一阶段。官方发行版仍标记 Preview。
+当前已实现可信共享账户模式的 P0 嵌入：现有目录注册、路径策略、创建/提交/执行守卫、官方浏览器 Cookie 签发、精确 CSP、`postMessage` 初始化、官方工作区/会话导航，以及只填草稿且不自动发送的初始提示。`preview_only` 在服务端阻止会话创建、提示提交和 Agent 执行。
 
-## 启动官方网页
+它不是多租户授权或每会话沙箱。嵌入仅支持同 scheme、同可注册域的不同 origin；跨站点部署、`task.changed`、`artifact.created` 和真实用户级 ACL 不在本阶段能力内。
 
-推荐 Python 3.12、Node.js 24（最低 22.19），插件安装还需 pnpm（`npm install -g pnpm@10.12.1`）。Linux/macOS：
+## 独立 Web
+
+推荐 Python 3.12、Node.js 24（最低 22.19），插件安装还需 pnpm `10.12.1`。
+
+Linux/macOS：
 
 ```bash
 bash scripts/install.sh
@@ -22,84 +26,80 @@ Copy-Item .env.example .env
 .venv/Scripts/python.exe -m workbench.cli web
 ```
 
-打开终端打印的 **带 token 的登录地址**。官方服务将 token 换成 Cookie，随后从地址栏移除 token。它不是旧版 `WORKBENCH_TOKEN` 登录流程。
+打开终端打印的带一次性 token 地址。官方服务把 token 换成 HttpOnly Cookie 后清理地址栏；这不是旧 `WORKBENCH_TOKEN` 流程。进入 **Settings -> Models** 配置 API Key 和模型。官方 DeepSeek Web 默认使用 `https://api.deepseek.com/anthropic` 的 Messages 协议。
 
-进入 **Settings → Models** 填 API Key，也可修改 Base URL、添加第三方模型或 Custom model API。建议在这里配置，避免复用旧 `.env` 的模型地址。官方 DeepSeek Web 默认使用 `https://api.deepseek.com/anthropic`（Messages 协议）；旧配置的 `https://api.deepseek.com` 不能直接当作该接口使用。
+## 工作区与嵌入
 
-`npm ci` 安装完整官方程序；不用自行编写静态页面，也不用复制上游内部会话协议。修改 Python 启动代码后重启即可，`web --reload` 已停用。
+1. 复制 `config/workspaces.example.json` 和 `config/embed.example.json` 为部署配置。
+2. 将工作区路径改为已经存在的绝对目录，并设置允许根目录。
+3. 设置 `WORKBENCH_WORKSPACE_CONFIG`。需要 iframe 时再设置 `WORKBENCH_EMBED_ENABLED=true`、`WORKBENCH_EMBED_CONFIG`、`WORKBENCH_PUBLIC_URL` 和服务端 client secret。
+4. 运行 `python -m workbench.cli doctor` 检查扩展和配置文件是否就绪，再重启 Host。
+
+详细本地、Docker、HTTPS、父系统后端和升级步骤见 [docs/EMBEDDING.md](docs/EMBEDDING.md)。API 合同位于 `contracts/openapi.json`、`contracts/embed-message.schema.json` 和 `contracts/error-codes.json`；父页面参考位于 `examples/host-integration/`。
+
+扩展改变 Host 组合，修改配置、扩展源码或受控 fork 后必须重启 Web 进程。启动器会生成 `DSH_HOME/workbench-web.patch.json`，并写入仓库扩展的绝对 `file:` URL。`patches/web-embedding.patch.template.json` 仅适用于扩展已经通过 DSH 插件管理器安装的 profile，不是本仓库的直接启动入口。
 
 ## Docker
 
 ```bash
 cp .env.example .env
-# 编辑 .env 后
 docker compose up -d --build
 docker compose logs -f workbench
 ```
 
-打开日志中带 token 的地址。默认宿主入口为 `http://localhost:8765`，仅绑定宿主机回环地址；改端口设置 `WORKBENCH_PORT`。经其他域名访问时设置 `WORKBENCH_PUBLIC_URL=https://你的域名`，它必须是无路径的 origin，并在外部配置 HTTPS 反向代理。
-
-官方服务监听容器内 `127.0.0.1`；本仓库 Nginx 暴露容器入口，保留真实 Host / Origin、Cookie、官方鉴权与 WebSocket，关闭代理缓冲。模型执行仍在同一个容器内。Compose 保留非 root、cap_drop、no-new-privileges、数据卷等设置。
-
-保留你已有的 `DSH_PERMISSION_MODE=danger-full-access` 容器配置：本镜像没有可用的 bubblewrap / Landlock 后端，`workspace-write` 会使 bash 失败；容器是当前隔离边界。本地启动默认保留官方权限策略。这里还不是每会话独立容器的多用户沙箱。
+默认入口是 `http://localhost:8765` 且只绑定宿主回环地址。嵌入部署使用 `examples/deploy/compose.workspaces.yaml` 挂载现有目录和只读配置：
 
 ```bash
-docker compose down
+docker compose -f compose.yaml -f examples/deploy/compose.workspaces.yaml up -d --build
 ```
 
-数据卷保持不变；`down -v` 会删除数据。镜像包含 Python、Node.js、npm、pnpm、bash、git 和 Nginx。模型调用需要出网。
+Compose 保留已有端口和数据卷。不要使用 `docker compose down -v`，它会删除数据卷。容器以非 root 用户运行、移除 capabilities、启用 `no-new-privileges`，但 `DSH_PERMISSION_MODE=danger-full-access` 表示容器本身是当前执行隔离边界，不是多租户沙箱。
 
-## 持久化与旧版迁移
+## 数据与升级
 
-| 内容 | 默认目录 |
+| 内容 | 默认位置 |
 |---|---|
-| 官方 Web 配置、模型凭据、会话 | `data/web/dsh-home/` |
-| 官方 Web 工作区根目录 | `data/web/workspace/` |
-| 自动建立的默认工作区 | `data/web/workspace/deepseek-harness/default-workspace/` |
-| 保留的 Python SDK 会话 | 原 `data/` 目录结构 |
+| 官方 Web 配置、模型凭据、会话 | `data/web/dsh-home/`；容器中为 `/data/web/dsh-home/` |
+| 嵌入 grant 与审计数据库 | `DSH_HOME/extensions/embed.sqlite3` |
+| 官方 Web 文档根目录 | `data/web/workspace/`；容器中为 `/data/web/workspace/` |
+| Python SDK 会话 | 原 `data/` 目录结构 |
 
-容器中 `data` 对应 `/data` 命名卷。用 `WORKBENCH_WEB_HOME` / `WORKBENCH_WEB_WORKSPACE` 覆盖目录。官方模型凭据按上游配置机制保存于 DSH_HOME，请保护数据目录。
+升级 ZIP 前备份 `.env`、实际配置、Compose override 和数据卷；替换应用文件后重新 `npm ci`、构建镜像并重启，不要删除数据卷。旧 SDK SQLite 会话不会伪装成官方 Web 会话，也不会自动迁移。
 
-旧 SDK SQLite 会话没有伪装成官方 Web 会话，不自动迁移；原文件和 CLI 入口保留。可在官方 Workspaces 中添加已有文件目录。升级时先备份原数据卷，重建镜像即可；无需删除卷。
-
-## Python SDK 单独运行
-
-仓库继续携带官方 SDK 原始 wheel；安装时拉取同版本平台 runtime。
+## Python SDK
 
 ```bash
 .venv/bin/python -m workbench.cli doctor
-.venv/bin/python -m workbench.cli chat "创建 Python 脚本，计算 1 到 100 的和，执行后写入 output/result.txt"
-.venv/bin/python -m workbench.cli chat --session 上次的ID "改成 1 到 1000 并重新执行"
+.venv/bin/python -m workbench.cli chat "创建 Python 脚本并运行"
+.venv/bin/python -m workbench.cli chat --session 上次的ID "继续修改"
 ```
 
-SDK CLI 的 `DSH_MODEL`、`DSH_PROFILE`、`DSH_PATCHES` 与 Web 的官方模型/配置管理独立。旧 `workbench.api` 仅保留兼容接口，不再提供网页，也不承载官方 Web 协议。
+SDK CLI 的 `DSH_MODEL`、`DSH_PROFILE`、`DSH_PATCHES` 与官方 Web 的模型和会话配置独立。旧 `workbench.api` 仅保留兼容接口，不承载官方 Web 协议。
 
-## 二次开发
+## 代码边界
 
 | 位置 | 用途 |
 |---|---|
-| `package.json` / `package-lock.json` | 固定官方完整 Web 发行版与依赖 |
-| `workbench/official_web.py` | 官方启动、工作区 bootstrap、Nginx、进程回收 |
-| `workbench/cli.py` | Web 与 Python SDK 启动入口 |
-| `workbench/runtime.py` | 保留的 Python SDK 适配 |
-| `Dockerfile` / `compose.yaml` | 单用户容器执行与数据持久化 |
-| `vendor/official-sdk/` | Python SDK 原始 wheel、许可证与哈希 |
+| `packages/workbench-extensions/` | 工作区策略、HTTP 路由、票据、Host/Client 插件 |
+| `vendor/official-web-forks/` | 固定上游 commit 的两个最小受控 fork |
+| `workbench/official_web.py` | 官方 Host 启动、patch 生成、Nginx 和进程回收 |
+| `contracts/` | HTTP、消息和错误码合同 |
+| `config/`、`examples/` | 配置、部署和父系统参考 |
+| `tests-js/`、`scripts/*smoke.cjs` | 策略单测和真实浏览器回归 |
 
-Web 扩展优先使用官方 Plugins / profile patch，而不是重写流式、文件面板或模型设置。`DSH_WEB_PATCHES` 接受 patch 文件列表（Linux/macOS 用 `:`，Windows 用 `;`），在本仓库工作区 patch 后加载。`DSH_WEB_DIR` 可指向安装了上述固定版本的其他目录。
-
-上游项目：[deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness)。如果要改官方组件源码，需基于上游源码构建自己的发行包，再有明确版本控制地接入；本次没有改动上游内部实现。
+上游绑定、公开 API 和 fork 理由见 [docs/development/UPSTREAM_BINDINGS.md](docs/development/UPSTREAM_BINDINGS.md)，整体设计见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ## 验证
 
 ```bash
 python -m pytest -q
 npm ci
-npx playwright install chromium
+npm run build:extensions
+npm run test:extensions
+npm run test:embed
 node scripts/web-smoke.cjs
-# 安装 Nginx 后验证容器入口相同的代理模式
-node scripts/web-smoke.cjs --proxy
+docker compose config --quiet
+docker compose build workbench
 ```
 
-浏览器验收调用本地可控模型夹具，检查真实官方服务的 SSE → 工具执行 → WebSocket → 文件预览链路，不消耗真实模型额度。它不证明模型推理质量；真实 API Key 的联网任务需在部署环境验收。详细结果见 [docs/VALIDATION.md](docs/VALIDATION.md)。
-
-下一阶段在官方协议之上接 Ezprober 身份、受控工具和会话沙箱，再处理 iframe 的 frame-ancestors、Cookie、可信来源与 postMessage；当前没有放开嵌入限制。
+浏览器测试使用本地模型夹具验证真实官方 Web、SSE、工具、WebSocket、文件预览和 iframe 链路，不消耗真实模型额度，也不证明公网模型可用性。验证环境、结果和未运行项见 [docs/VALIDATION.md](docs/VALIDATION.md)。

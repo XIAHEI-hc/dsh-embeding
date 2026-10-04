@@ -1,6 +1,8 @@
 FROM node:24-bookworm-slim AS official-web
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY packages/workbench-extensions ./packages/workbench-extensions
+COPY vendor/official-web-forks ./vendor/official-web-forks
 RUN npm ci --omit=dev --no-audit --no-fund && npm install --global pnpm@10.12.1
 
 FROM python:3.12-slim-bookworm
@@ -9,6 +11,8 @@ COPY --from=official-web /usr/local/ /usr/local/
 COPY --from=official-web /app/node_modules /app/node_modules
 WORKDIR /app
 COPY package.json package-lock.json pyproject.toml constraints.txt ./
+COPY packages/workbench-extensions ./packages/workbench-extensions
+COPY vendor/official-web-forks ./vendor/official-web-forks
 COPY workbench ./workbench
 COPY vendor/official-sdk ./vendor/official-sdk
 RUN pip install -c constraints.txt --no-cache-dir ./vendor/official-sdk/*.whl .

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "public_origin": "https://dsh.example.test",
+  "allowed_parent_origins": [
+    "https://portal.example.test"
+  ],
+  "ticket_ttl_seconds": 60,
+  "ticket_max_ttl_seconds": 120,
+  "ready_timeout_ms": 15000,
+  "init_timeout_ms": 30000,
+  "deployment_mode": "trusted_shared_account",
+  "clients": [
+    {
+      "client_id": "portal-example",
+      "secret_env": "DSH_EMBED_PORTAL_SECRET",
+      "allowed_parent_origins": [
+        "https://portal.example.test"
+      ],
+      "workspace_aliases": [
+        "project-a"
+      ],
+      "mode": "read_write"
+    }
+  ]
+}

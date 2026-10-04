@@ -32,14 +32,31 @@ def main():
         sys.exit(code)
     if args.command == 'doctor':
         import importlib.metadata
+        import os
+        from pathlib import Path
         try:
             sdk = importlib.metadata.version('deepseek-harness-sdk')
             runtime = importlib.metadata.version('deepseek-harness-runtime-bin')
         except importlib.metadata.PackageNotFoundError as e:
             print('缺少依赖:',e); sys.exit(1)
+        workspace_config = os.getenv('WORKBENCH_WORKSPACE_CONFIG')
+        embed_config = os.getenv('WORKBENCH_EMBED_CONFIG')
+        embed_enabled = os.getenv('WORKBENCH_EMBED_ENABLED','false').lower() in ('true','1')
+        extension = Path(__file__).resolve().parent.parent / 'node_modules/@dsh-workbench/extensions/package.json'
+        diagnostics = {
+            'installed': extension.is_file(),
+            'workspace_configured': bool(workspace_config),
+            'workspace_config_exists': bool(workspace_config and Path(workspace_config).is_file()),
+            'embed_enabled': embed_enabled,
+            'embed_configured': bool(embed_config),
+            'embed_config_exists': bool(embed_config and Path(embed_config).is_file()),
+        }
+        diagnostics['ready'] = diagnostics['installed'] and (
+            not diagnostics['workspace_configured'] or diagnostics['workspace_config_exists']) and (
+            not embed_enabled or diagnostics['embed_config_exists'])
         print(json.dumps({'sdk':sdk,'runtime':runtime,'model':settings.model,'profile':settings.profile,
                           'api_key_configured':bool(settings.api_key),'web_distribution':'npm @deepseek-ai/dsh 0.2.0-rc.2',
-                          'data_dir':str(settings.data_dir)},ensure_ascii=False,indent=2))
+                          'data_dir':str(settings.data_dir),'extensions':diagnostics},ensure_ascii=False,indent=2))
         return
     app = Workbench(settings)
     if args.command == 'sessions':

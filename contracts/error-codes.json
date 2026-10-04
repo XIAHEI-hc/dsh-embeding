@@ -1,0 +1,134 @@
+[
+  {
+    "code": "WORKSPACE_NOT_FOUND",
+    "http_status": 404,
+    "retryable": false,
+    "action": "选择其它工作区"
+  },
+  {
+    "code": "WORKSPACE_DIRECTORY_MISSING",
+    "http_status": 409,
+    "retryable": true,
+    "action": "检查挂载并重新检查"
+  },
+  {
+    "code": "WORKSPACE_NOT_DIRECTORY",
+    "http_status": 422,
+    "retryable": false,
+    "action": "选择目录"
+  },
+  {
+    "code": "WORKSPACE_READ_DENIED",
+    "http_status": 403,
+    "retryable": true,
+    "action": "检查权限"
+  },
+  {
+    "code": "WORKSPACE_READ_ONLY",
+    "http_status": 409,
+    "retryable": false,
+    "action": "仅预览或管理员授权"
+  },
+  {
+    "code": "WORKSPACE_OUTSIDE_ALLOWED_ROOT",
+    "http_status": 403,
+    "retryable": false,
+    "action": "联系管理员"
+  },
+  {
+    "code": "WORKSPACE_IO_ERROR",
+    "http_status": 503,
+    "retryable": true,
+    "action": "检查文件系统并重试"
+  },
+  {
+    "code": "WORKSPACE_SERVICE_UNAVAILABLE",
+    "http_status": 503,
+    "retryable": true,
+    "action": "等待就绪后重试"
+  },
+  {
+    "code": "SESSION_NOT_FOUND",
+    "http_status": 404,
+    "retryable": false,
+    "action": "显式新建会话"
+  },
+  {
+    "code": "SESSION_WORKSPACE_MISMATCH",
+    "http_status": 409,
+    "retryable": false,
+    "action": "选择正确会话"
+  },
+  {
+    "code": "EMBED_ORIGIN_DENIED",
+    "http_status": 403,
+    "retryable": false,
+    "action": "检查父origin白名单"
+  },
+  {
+    "code": "EMBED_CLIENT_UNAUTHORIZED",
+    "http_status": 401,
+    "retryable": false,
+    "action": "检查后端client凭据"
+  },
+  {
+    "code": "EMBED_SCOPE_DENIED",
+    "http_status": 403,
+    "retryable": false,
+    "action": "检查scope"
+  },
+  {
+    "code": "EMBED_TICKET_EXPIRED",
+    "http_status": 401,
+    "retryable": true,
+    "action": "申请新票据"
+  },
+  {
+    "code": "EMBED_TICKET_REPLAYED",
+    "http_status": 409,
+    "retryable": false,
+    "action": "申请新票据"
+  },
+  {
+    "code": "EMBED_TICKET_REVOKED",
+    "http_status": 401,
+    "retryable": false,
+    "action": "重新授权"
+  },
+  {
+    "code": "EMBED_AUTH_UNAVAILABLE",
+    "http_status": 503,
+    "retryable": true,
+    "action": "检查官方凭据适配"
+  },
+  {
+    "code": "EMBED_COOKIE_UNAVAILABLE",
+    "http_status": 401,
+    "retryable": true,
+    "action": "检查浏览器策略或独立打开"
+  },
+  {
+    "code": "EMBED_PROTOCOL_UNSUPPORTED",
+    "http_status": 400,
+    "retryable": false,
+    "action": "升级接入协议"
+  },
+  {
+    "code": "EMBED_INIT_TIMEOUT",
+    "http_status": 504,
+    "retryable": true,
+    "action": "重新握手"
+  },
+  {
+    "code": "EMBED_CROSS_SITE_UNSUPPORTED",
+    "http_status": 422,
+    "retryable": false,
+    "action": "使用同站点部署"
+  },
+  {
+    "code": "CONFIG_INVALID",
+    "http_status": 500,
+    "retryable": false,
+    "action": "管理员修正配置"
+  }
+]

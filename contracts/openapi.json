@@ -1,0 +1,239 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "DSH Workspace Embedding API",
+    "version": "1.0.0",
+    "description": "Implemented P0 control and bootstrap API for the trusted shared-account, same-site embedding deployment. It extends rather than replaces the official DSH API."
+  },
+  "servers": [{ "url": "https://dsh.example.test" }],
+  "paths": {
+    "/embed/health/ready": {
+      "get": {
+        "summary": "Report workspace policy readiness",
+        "security": [],
+        "responses": {
+          "200": { "description": "Ready", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } } },
+          "503": { "description": "Policy is still unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Health" } } } }
+        }
+      }
+    },
+    "/embed/control/grants": {
+      "post": {
+        "summary": "Issue a one-use embedding ticket",
+        "security": [{ "ClientBearer": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GrantRequest" } } } },
+        "responses": {
+          "201": { "description": "Ticket issued", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GrantResponse" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/embed/control/grants/revoke": {
+      "post": {
+        "summary": "Revoke an unconsumed ticket owned by the calling client",
+        "security": [{ "ClientBearer": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RevokeRequest" } } } },
+        "responses": {
+          "200": { "description": "Revocation result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RevokeResponse" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/embed/bootstrap/redeem": {
+      "post": {
+        "summary": "Atomically redeem a ticket and issue the official browser session cookie",
+        "security": [],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RedeemRequest" } } } },
+        "responses": {
+          "200": { "description": "Ticket consumed and browser authenticated", "headers": { "Set-Cookie": { "description": "Authority-bound official DSH browser session; HttpOnly, SameSite=Strict and Secure on HTTPS.", "schema": { "type": "string" } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RedeemResponse" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/embed/control/workspaces": {
+      "get": {
+        "summary": "List configured workspace projections",
+        "security": [{ "OfficialBrowserSession": [] }],
+        "responses": {
+          "200": { "description": "Configured entries", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkspaceList" } } } },
+          "401": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/embed/control/workspaces/check": {
+      "post": {
+        "summary": "Recheck one official workspace ID",
+        "security": [{ "OfficialBrowserSession": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkspaceCheck" } } } },
+        "responses": {
+          "200": { "description": "Current workspace state", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkspaceCheckResponse" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "404": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "422": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/embed": {
+      "get": {
+        "summary": "Serve the CSP-restricted iframe bootstrap page",
+        "security": [],
+        "parameters": [{ "name": "channel_id", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 256 } }],
+        "responses": {
+          "200": { "description": "Bootstrap HTML", "content": { "text/html": { "schema": { "type": "string" } } } },
+          "400": { "description": "Invalid channel or query" }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "Error": { "description": "Structured failure", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": { "type": "string" },
+              "message": { "type": "string" },
+              "retryable": { "type": "boolean" },
+              "request_id": { "$ref": "#/components/schemas/RequestId" },
+              "action": { "type": "string" }
+            },
+            "required": ["code", "message", "retryable", "request_id", "action"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["error"],
+        "additionalProperties": false
+      },
+      "RequestId": { "type": "string", "minLength": 1, "maxLength": 256 },
+      "GrantRequest": {
+        "type": "object",
+        "properties": {
+          "subject": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "parent_origin": { "type": "string", "format": "uri" },
+          "workspace_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "session_id": { "type": "string", "minLength": 1, "maxLength": 256 }
+        },
+        "required": ["subject", "parent_origin", "workspace_id"],
+        "additionalProperties": false
+      },
+      "GrantResponse": {
+        "type": "object",
+        "properties": {
+          "ticket": { "type": "string", "minLength": 32, "maxLength": 4096 },
+          "expires_at": { "type": "string", "format": "date-time" },
+          "entry_url": { "type": "string", "format": "uri-reference" },
+          "protocol_version": { "const": "1.0" }
+        },
+        "required": ["ticket", "expires_at", "entry_url", "protocol_version"],
+        "additionalProperties": false
+      },
+      "RedeemRequest": {
+        "type": "object",
+        "properties": {
+          "protocol": { "const": "dsh.embed" },
+          "version": { "const": "1.0" },
+          "channel_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "request_id": { "$ref": "#/components/schemas/RequestId" },
+          "parent_origin": { "type": "string", "format": "uri" },
+          "ticket": { "type": "string", "minLength": 32, "maxLength": 4096 },
+          "initial_prompt": { "type": "string", "minLength": 1, "maxLength": 8000 }
+        },
+        "required": ["protocol", "version", "channel_id", "request_id", "parent_origin", "ticket"],
+        "additionalProperties": false
+      },
+      "RedeemResponse": {
+        "type": "object",
+        "properties": {
+          "protocol": { "const": "dsh.embed" },
+          "version": { "const": "1.0" },
+          "workspace_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "session_id": { "type": ["string", "null"] },
+          "mode": { "enum": ["read_write", "preview_only"] },
+          "capabilities": { "type": "array", "items": { "type": "string" } },
+          "initial_prompt": { "type": "string", "minLength": 1, "maxLength": 8000 }
+        },
+        "required": ["protocol", "version", "workspace_id", "session_id", "mode", "capabilities"],
+        "additionalProperties": false
+      },
+      "WorkspaceCheck": {
+        "type": "object",
+        "properties": { "workspace_id": { "type": "string", "minLength": 1, "maxLength": 256 } },
+        "required": ["workspace_id"],
+        "additionalProperties": false
+      },
+      "WorkspaceState": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": ["string", "null"] },
+          "alias": { "type": ["string", "null"] },
+          "title": { "type": "string" },
+          "state": { "type": "string" },
+          "mode": { "enum": ["read_write", "preview_only"] },
+          "request_id": { "$ref": "#/components/schemas/RequestId" }
+        },
+        "required": ["workspace_id", "alias", "title", "state", "mode"],
+        "additionalProperties": false
+      },
+      "WorkspaceCheckResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/WorkspaceState" },
+          { "type": "object", "required": ["request_id"] }
+        ]
+      },
+      "WorkspaceList": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/WorkspaceState" } },
+          "request_id": { "$ref": "#/components/schemas/RequestId" }
+        },
+        "required": ["items", "request_id"],
+        "additionalProperties": false
+      },
+      "RevokeRequest": {
+        "type": "object",
+        "properties": { "ticket": { "type": "string", "minLength": 32, "maxLength": 4096 } },
+        "required": ["ticket"],
+        "additionalProperties": false
+      },
+      "RevokeResponse": {
+        "type": "object",
+        "properties": { "revoked": { "type": "boolean" }, "request_id": { "$ref": "#/components/schemas/RequestId" } },
+        "required": ["revoked", "request_id"],
+        "additionalProperties": false
+      },
+      "Health": {
+        "type": "object",
+        "properties": { "status": { "enum": ["ready", "pending"] }, "request_id": { "$ref": "#/components/schemas/RequestId" } },
+        "required": ["status", "request_id"],
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "ClientBearer": { "type": "http", "scheme": "bearer", "description": "Server-side registered client secret; never expose it to a browser." },
+      "OfficialBrowserSession": { "type": "apiKey", "in": "cookie", "name": "authority-derived-official-cookie", "description": "The actual cookie name is derived and signed by the pinned official DSH connection implementation; consumers must not hardcode it." }
+    }
+  }
+}

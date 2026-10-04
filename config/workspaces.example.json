@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "allowed_roots": [
+    "/workspaces"
+  ],
+  "default_alias": "project-a",
+  "auto_create_user_directories": false,
+  "workspaces": [
+    {
+      "alias": "project-a",
+      "path": "/workspaces/project-a",
+      "title": "Project A",
+      "mode": "read_write"
+    },
+    {
+      "alias": "reference-data",
+      "path": "/workspaces/reference-data",
+      "title": "Reference Data",
+      "mode": "preview_only"
+    }
+  ]
+}
