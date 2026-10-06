@@ -1,4 +1,4 @@
-# 验证记录（2026-10-04）
+# 验证记录（2026-10-06）
 
 状态只使用 PASS、FAIL、NOT_RUN。固定版本为官方 DSH `0.2.0-rc.2`、上游 tag `dsh-v0.2.0-rc.2`、commit `639ed015397290b3745d163aafe02ffee4aa3f84`。
 
@@ -6,9 +6,9 @@
 
 | 状态 | 项目 | 结果 |
 |---|---|---|
-| PASS | 扩展单元测试 | 11 项通过：配置/PSL、public origin、grant 重放/过期/撤销、路径状态、稳定 ID、session mismatch、preview Agent block |
-| PASS | 真实 iframe smoke | 官方 Host/plugin、workspace 注册、grant、origin 拒绝、精确 CSP、Cookie、一次兑换、重放/撤销/过期、官方会话导航、只填草稿、刷新不重兑 |
-| PASS | Python 回归 | 在最终 Linux 镜像和精确 SDK/runtime 中 9 项通过，1.29 秒 |
+| PASS | 扩展单元测试 | 16 项通过：配置/PSL、client preview 拒绝、grant 生命周期、路径状态、稳定 ID、缺失目录策略恢复、cwd/default alias 绑定、未知关联拒绝、session mismatch、preview Agent block |
+| PASS | 真实 iframe smoke | 官方 Host/plugin、workspace 注册、grant、origin 拒绝、精确 CSP、Cookie、一次兑换、重放/撤销/过期、真实连接状态、只填草稿、非空会话刷新后 ID 不变且不重兑 |
+| PASS | Python 回归 | 在最终 Linux 镜像和精确 SDK/runtime 中 9 项通过，1.23 秒 |
 | PASS | Docker 构建 | WSL2 Docker Engine 29.7.2、Compose 5.5.0；镜像构建和受控 fork/扩展 ESM import 通过 |
 | PASS | 隔离容器 | UID/GID 10001、读写/只读 bind、ready 200、精确 frame-ancestors、无 XFO、no-store；未改动已有 Compose 服务 |
 | PASS | 原官方 Web smoke | 真实 Chromium 下官方页面、SSE、工具、WebSocket、文件预览链路通过 |
@@ -24,8 +24,8 @@ Windows `.venv` 的 runtime wheel 下载曾两次停滞，因此该宿主路径�
 | PASS | 票据生命周期 | SQLite 原子消费；只持久化 SHA-256；重放、过期、撤销均被拒绝 |
 | PASS | 父子边界 | 校验 parent origin、event source、channel、request；ticket 不进 URL |
 | PASS | Cookie/CSP | HttpOnly、SameSite=Strict；HTTPS 配置启用 Secure；`/embed` 精确 frame-ancestors 且无冲突 XFO |
-| PASS | 工作区策略 | 只注册已有 canonical 目录；边界、缺失、文件、权限、只读、I/O 和 session mismatch 显式失败 |
-| PASS | 服务端守卫 | create、prompt 和 agent pre-step 都受策略约束；`preview_only` 不能执行 |
+| PASS | 工作区策略 | 配置路径唯一决定策略；边界、缺失、文件、权限、只读、I/O、未知关联和 session mismatch 显式失败；目录恢复不丢失模式 |
+| PASS | 服务端守卫 | create、prompt 和 agent pre-step 都受策略约束；cwd/default alias 写回官方 workspace ID；工作区 `preview_only` 不能执行 |
 | PASS | 日志/URL审查 | 已验证 smoke 未在 URL 或应用日志输出 ticket、client secret、Cookie 或初始 prompt |
 
 ## 未运行与设计外项目

@@ -15,7 +15,7 @@ cp config/workspaces.example.json config/workspaces.json
 cp config/embed.example.json config/embed.json
 ```
 
-`workspaces.json` 的 `allowed_roots` 与每个 `path` 都必须是运行 Host 可见的绝对路径，而且目录必须已存在。`auto_create_user_directories` 必须为 `false`。`mode` 为 `read_write` 或 `preview_only`；后者会在服务端阻止创建执行会话、提交 prompt 和 Agent step。
+`workspaces.json` 的 `allowed_roots` 与每个 `path` 都必须是运行 Host 可见的绝对路径；允许根必须在加载配置时存在。工作区目录应在部署时存在，若因挂载暂时缺失，服务会返回明确错误并保留既有 workspace ID 与配置模式，目录恢复后才重新放行。`auto_create_user_directories` 必须为 `false`。`mode` 为 `read_write` 或 `preview_only`；后者会在服务端阻止创建执行会话、提交 prompt 和 Agent step。
 
 `embed.json` 的关键字段：
 
@@ -31,7 +31,7 @@ cp config/embed.example.json config/embed.json
 | `clients[].secret_env` / `secret_file` | 二选一，secret 长度 32..4096 字符 |
 | `clients[].allowed_parent_origins` | 该 client 可申请的父 origin |
 | `clients[].workspace_aliases` | 该 client 可申请的配置 alias |
-| `clients[].mode` | 该 client 允许的最高模式 |
+| `clients[].mode` | 当前必须为 `read_write`；共享 Cookie 无法持续实施客户端级 `preview_only`，配置会失败 |
 
 不要在 `embed.json` 添加开关；唯一启用开关是环境变量 `WORKBENCH_EMBED_ENABLED`。
 
@@ -145,6 +145,6 @@ grant 数据库存的是 ticket 哈希，不是明文 ticket。已消费、撤�
 - 仅可信共享账户；没有每用户全通道 ACL，也没有每 session 独立容器。
 - 仅同站点 iframe；跨站点按设计拒绝。
 - P0 消息为 `ready`、`initialized`、`session.opened`、`connection.changed`、`error`；没有 `task.changed` 或 `artifact.created`。
-- `preview_only` 阻止执行，不代表提供专用只读文件浏览 UI。
+- 工作区级 `preview_only` 阻止执行，不代表提供专用只读文件浏览 UI；客户端级 `preview_only` 在共享账户模式下按配置错误拒绝。
 - 浏览器禁用 Cookie、CSP/DNS/证书错误时会失败，父页应提供可见错误和独立打开入口。
 - 测试夹具不证明真实付费模型、外网、证书链或业务数据权限正确。

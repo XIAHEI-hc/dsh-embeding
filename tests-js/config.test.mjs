@@ -31,6 +31,27 @@ test('configuration validates same-site origins and server-only secrets', () => 
   }
 })
 
+test('trusted shared-account mode rejects client-level preview-only grants', () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-config-'))
+  const path = join(root, 'embed.json')
+  const old = process.env.TEST_DSH_EMBED_SECRET
+  process.env.TEST_DSH_EMBED_SECRET = 'p'.repeat(32)
+  try {
+    writeFileSync(path, JSON.stringify({ schema_version: 1, public_origin: 'https://dsh.example.test',
+      allowed_parent_origins: ['https://portal.example.test'], deployment_mode: 'trusted_shared_account',
+      clients: [{ client_id: 'preview-portal', secret_env: 'TEST_DSH_EMBED_SECRET', mode: 'preview_only',
+        allowed_parent_origins: ['https://portal.example.test'], workspace_aliases: ['project'] }] }))
+    assert.throws(() => loadEmbedConfig(path, true), {
+      code: 'CONFIG_INVALID',
+      message: /preview_only/u,
+    })
+  } finally {
+    if (old === undefined) delete process.env.TEST_DSH_EMBED_SECRET
+    else process.env.TEST_DSH_EMBED_SECRET = old
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('cross-site configuration is explicitly rejected', () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-config-'))
   const path = join(root, 'embed.json')

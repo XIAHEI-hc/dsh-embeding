@@ -21,7 +21,7 @@
 
 ## 工作区策略
 
-配置只接受已有绝对目录。启动时对允许根和工作区做 canonical/realpath 检查，用路径关系而不是字符串前缀阻止 `..`、相似前缀和 symlink 越界；同一真实路径得到稳定且去重的官方 workspace ID。`WORKBENCH_WEB_WORKSPACE` 只是官方 documents root，不代替项目 cwd。
+配置只接受绝对路径，允许根必须已存在。启动和每次执行入口都对工作区做 canonical/realpath 检查，用路径关系而不是字符串前缀阻止 `..`、相似前缀和 symlink 越界；同一真实路径得到稳定且去重的官方 workspace ID。若工作区启动时暂时缺失，策略先按规范化配置路径保留已有 ID 关联并失败关闭，目录恢复后仍使用原配置模式。`WORKBENCH_WEB_WORKSPACE` 只是官方 documents root，不代替项目 cwd。
 
 策略把 missing、not-directory、denied、read-only、outside-root 和 I/O 失败显式映射为结构化错误，绝不静默回退到默认目录。守卫覆盖：
 
@@ -44,12 +44,12 @@ grant 数据库只保存 ticket 的 SHA-256 哈希。兑换在 SQLite `BEGIN IMM
 
 bootstrap 向允许 origin 发送 `ready`。父页核对 `origin`、`source`、协议版本、channel 和 request 后申请 ticket，并发送 `init`。兑换成功后只把已净化的工作区、会话、模式和初始草稿状态写入 `sessionStorage`，随后进入官方页面。
 
-Client 插件等待官方 workspace controller snapshot，再调用 `connectWorkspace(workspaceId)` 和 `openSession(sessionId)`。有初始 prompt 时，仅在当前 draft 为空且尚未应用时调用 `setDraft`；它永不自动提交，刷新和重连也不重新兑换 ticket 或新建会话。
+Client 插件等待官方 workspace controller snapshot。首次进入时调用 `connectWorkspace(workspaceId)`，立即持久化返回的 session ID；刷新时校验该 session 仍属于授权工作区，再用 `openSession(sessionId)` 恢复同一对话。有初始 prompt 时，仅在当前 draft 为空且尚未应用时调用 `setDraft`；它永不自动提交，刷新和重连也不重新兑换 ticket 或新建会话。`connection.changed` 直接订阅官方 Connection 的 WebSocket/Host 恢复状态，不使用 `navigator.onLine` 代替服务可用性。
 
 P0 消息只有 `ready`、`initialized`、`session.opened`、`connection.changed`、`error`。P1 的任务与产物事件未实现。
 
 ## 信任边界与限制
 
-当前 deployment mode 固定为 `trusted_shared_account`。父系统可以限制谁获得 ticket，但 ticket 兑换后使用的是同一个 DSH operator 权限边界；本实现不声称为每个终端用户提供全 HTTP/RPC/WebSocket ACL。真正的多租户需求必须使用隔离 Host，或在官方所有通道上实现统一身份与授权。
+当前 deployment mode 固定为 `trusted_shared_account`。父系统可以限制谁获得 ticket，但 ticket 兑换后使用的是同一个 DSH operator 权限边界；本实现不声称为每个终端用户提供全 HTTP/RPC/WebSocket ACL，也拒绝无法在普通共享 Cookie 上持续兑现的客户端级 `preview_only`。真正的多租户或客户端级只读需求必须使用隔离 Host，或在官方所有通道上实现统一身份与授权。
 
 Python SDK CLI 和旧兼容 API 使用原 adapter/store，与官方 Web 的存储和协议独立。容器整体是当前工具执行隔离边界，不是每 session 独立容器。

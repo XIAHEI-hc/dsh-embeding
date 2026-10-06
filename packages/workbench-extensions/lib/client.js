@@ -16,7 +16,7 @@ window.__ModuleLoader__.load({
 				if (value?.protocol !== PROTOCOL || value?.version !== VERSION
 					|| typeof value.workspace_id !== "string" || typeof value.parent_origin !== "string"
 					|| typeof value.channel_id !== "string" || typeof value.request_id !== "string"
-					|| !["grant", "workspace"].includes(value.session_binding)) return;
+					|| !["grant", "workspace", "session"].includes(value.session_binding)) return;
 				return value;
 			} catch { return; }
 		}
@@ -36,32 +36,61 @@ window.__ModuleLoader__.load({
 		}
 		function waitForWorkspace(ctx, workspaceId, timeoutMs = 15000) {
 			const present = () => ctx.workspaces.list.getSnapshot().items
-				.some((item) => item.workspaceId === workspaceId);
-			if (present()) return Promise.resolve();
+				.find((item) => item.workspaceId === workspaceId);
+			const current = present();
+			if (current !== undefined) return Promise.resolve(current);
 			return new Promise((resolve, reject) => {
 				let dispose;
-				const finish = (error) => {
+				const finish = (error, workspace) => {
 					clearTimeout(timer);
 					dispose?.();
-					error === undefined ? resolve() : reject(error);
+					error === undefined ? resolve(workspace) : reject(error);
 				};
 				const timer = setTimeout(() => finish(new Error("WORKSPACE_NOT_FOUND")), timeoutMs);
-				dispose = ctx.workspaces.list.subscribe(() => { if (present()) finish(); });
-				if (present()) finish();
+				dispose = ctx.workspaces.list.subscribe(() => {
+					const workspace = present();
+					if (workspace !== undefined) finish(undefined, workspace);
+				});
+				const workspace = present();
+				if (workspace !== undefined) finish(undefined, workspace);
+			});
+		}
+		function waitForSessionBinding(ctx, workspaceId, sessionId, timeoutMs = 15000) {
+			const present = () => {
+				const session = ctx.sessions.list.getSnapshot().byId[sessionId];
+				const workspace = ctx.workspaces.list.getSnapshot().items
+					.find((item) => item.workspaceId === workspaceId);
+				return session !== undefined && workspace?.sessionIds.includes(sessionId) === true;
+			};
+			if (present()) return Promise.resolve();
+			return new Promise((resolve, reject) => {
+				const disposers = [];
+				const finish = (error) => {
+					clearTimeout(timer);
+					for (const dispose of disposers) dispose();
+					error === undefined ? resolve() : reject(error);
+				};
+				const inspect = () => { if (present()) finish(); };
+				const timer = setTimeout(() => finish(new Error("SESSION_NOT_FOUND")), timeoutMs);
+				disposers.push(ctx.sessions.list.subscribe(inspect), ctx.workspaces.list.subscribe(inspect));
+				inspect();
 			});
 		}
 		async function initialize(ctx, state) {
 			await waitForWorkspace(ctx, state.workspace_id);
 			let sessionId;
-			if (state.session_binding === "grant") {
+			if (state.session_binding === "grant" || state.session_binding === "session") {
 				sessionId = state.session_id;
 				if (typeof sessionId !== "string") throw new Error("SESSION_NOT_FOUND");
 				await ctx.sessions.refresh();
-				if (ctx.sessions.list.getSnapshot().byId[sessionId] === undefined) throw new Error("SESSION_NOT_FOUND");
+				await waitForSessionBinding(ctx, state.workspace_id, sessionId);
 				ctx.uiWorkspace.openSession(sessionId);
 				applyDraft(ctx, state, sessionId);
 			} else {
 				sessionId = await ctx.uiWorkspace.connectWorkspace(state.workspace_id);
+				state.session_id = sessionId;
+				state.session_binding = "session";
+				save(state);
 				ctx.uiWorkspace.openSession(sessionId);
 				applyDraft(ctx, state, sessionId);
 			}
@@ -73,19 +102,19 @@ window.__ModuleLoader__.load({
 				workspace_id: state.workspace_id, session_id: sessionId,
 			});
 		}
-		const inject = ["sessions", "workspaces", "uiWorkspace", "conversation"];
+		const inject = ["connection", "sessions", "workspaces", "uiWorkspace", "conversation"];
 		function apply(ctx) {
 			const state = loadState();
 			if (state === undefined) return;
-			const connection = () => send(state, "connection.changed", {
-				state: navigator.onLine ? "connected" : "disconnected",
-			});
-			addEventListener("online", connection);
-			addEventListener("offline", connection);
-			ctx.effect(() => () => {
-				removeEventListener("online", connection);
-				removeEventListener("offline", connection);
-			}, "workbench embed connection events");
+			const connection = () => {
+				const current = ctx.connection.state.getSnapshot();
+				send(state, "connection.changed", {
+					state: current === "connecting" || current === undefined ? "reconnecting" : current,
+				});
+			};
+			const disposeConnection = ctx.connection.state.subscribe(connection);
+			connection();
+			ctx.effect(() => disposeConnection, "workbench embed connection events");
 			void initialize(ctx, state).catch((error) => {
 				console.error("embed-client initialization failed", error);
 				send(state, "error", {

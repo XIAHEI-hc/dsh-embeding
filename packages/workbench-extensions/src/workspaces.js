@@ -33,12 +33,22 @@ export class WorkspacePolicy {
   constructor(registry, config) {
     this.registry = registry
     this.config = config
-    this.aliases = new Map(config.workspaces.map(item => [item.alias, { config: item, workspaceId: undefined }]))
+    this.aliases = new Map(config.workspaces.map(item => [item.alias, {
+      config: item,
+      configuredPath: resolve(item.path),
+      canonicalPath: undefined,
+      workspaceId: undefined,
+    }]))
     this.ready = false
   }
 
   async initialize() {
-    for (const alias of this.aliases.keys()) {
+    for (const [alias, record] of this.aliases) {
+      const lexical = this.registry.list().filter(workspace => resolve(workspace.path) === record.configuredPath)
+      if (lexical.length === 1) record.workspaceId = lexical[0].id
+      if (lexical.length > 1) throw new WorkbenchExtensionError('CONFIG_INVALID', {
+        message: `工作区路径关联不唯一: ${record.config.path}`,
+      })
       try { await this.checkAlias(alias, { register: true }) } catch (error) {
         if (!(error instanceof WorkbenchExtensionError) || error.code === 'CONFIG_INVALID') throw error
       }
@@ -70,18 +80,58 @@ export class WorkspacePolicy {
     return { canonical, mode: 'read_write', state: 'ready' }
   }
 
+  uniqueRecord(records) {
+    if (records.length === 1) return records[0]
+    if (records.length > 1) throw new WorkbenchExtensionError('WORKSPACE_NOT_FOUND', {
+      message: '工作区路径无法唯一关联到配置策略',
+    })
+    return undefined
+  }
+
+  async recordForPath(path, canonical) {
+    const lexical = this.uniqueRecord([...this.aliases.values()]
+      .filter(record => record.configuredPath === resolve(path)))
+    if (lexical !== undefined) return lexical
+
+    const target = canonical ?? (await this.inspectPath(path, 'preview_only')).canonical
+    const known = [...this.aliases.values()].filter(record => record.canonicalPath === target)
+    const knownRecord = this.uniqueRecord(known)
+    if (knownRecord !== undefined) return knownRecord
+
+    const matches = []
+    for (const record of this.aliases.values()) {
+      try {
+        record.canonicalPath = await realpath(record.config.path)
+        if (record.canonicalPath === target) matches.push(record)
+      } catch (error) {
+        if (error?.code !== 'ENOENT' && error?.code !== 'EACCES' && error?.code !== 'EPERM') throw filesystemError(error)
+      }
+    }
+    return this.uniqueRecord(matches)
+  }
+
+  bind(record, workspace) {
+    if (record.workspaceId !== undefined && record.workspaceId !== workspace.id) {
+      throw new WorkbenchExtensionError('WORKSPACE_NOT_FOUND', {
+        message: '工作区配置与官方注册信息不一致',
+      })
+    }
+    record.workspaceId = workspace.id
+  }
+
   async checkAlias(alias, { register = false } = {}) {
     if (!this.ready && !register) throw new WorkbenchExtensionError('WORKSPACE_SERVICE_UNAVAILABLE')
     const record = this.aliases.get(alias)
     if (record === undefined) throw new WorkbenchExtensionError('WORKSPACE_NOT_FOUND')
     const inspected = await this.inspectPath(record.config.path, record.config.mode, record.config.writeProbe)
+    record.canonicalPath = inspected.canonical
     let workspace = record.workspaceId === undefined ? undefined : this.registry.get(record.workspaceId)
     if (workspace === undefined) workspace = await this.registry.resolveByPath(inspected.canonical)
     if (workspace === undefined && register) {
       workspace = await this.registry.create(inspected.canonical, record.config.title)
     }
     if (workspace === undefined) throw new WorkbenchExtensionError('WORKSPACE_NOT_FOUND')
-    record.workspaceId = workspace.id
+    this.bind(record, workspace)
     return this.publicValue(workspace, record.config, inspected)
   }
 
@@ -89,10 +139,14 @@ export class WorkspacePolicy {
     if (!this.ready) throw new WorkbenchExtensionError('WORKSPACE_SERVICE_UNAVAILABLE')
     const workspace = this.registry.get(workspaceId)
     if (workspace === undefined) throw new WorkbenchExtensionError('WORKSPACE_NOT_FOUND')
-    const record = [...this.aliases.values()].find(value => value.workspaceId === workspace.id)
-    const mode = record?.config.mode ?? 'read_write'
-    const inspected = await this.inspectPath(workspace.path, mode, record?.config.writeProbe ?? false)
-    return this.publicValue(workspace, record?.config, inspected)
+    let record = this.uniqueRecord([...this.aliases.values()]
+      .filter(value => value.workspaceId === workspace.id))
+    if (record === undefined) record = await this.recordForPath(workspace.path)
+    if (record === undefined) throw new WorkbenchExtensionError('WORKSPACE_NOT_FOUND')
+    this.bind(record, workspace)
+    const inspected = await this.inspectPath(workspace.path, record.config.mode, record.config.writeProbe)
+    record.canonicalPath = inspected.canonical
+    return this.publicValue(workspace, record.config, inspected)
   }
 
   publicValue(workspace, configured, inspected) {
@@ -146,11 +200,17 @@ export class WorkspacePolicy {
       return
     }
     if (request.cwd !== undefined) {
-      await this.requireWritable(await this.inspectPath(request.cwd))
+      const located = await this.inspectPath(request.cwd, 'preview_only')
+      const record = await this.recordForPath(request.cwd, located.canonical)
+      if (record === undefined) throw new WorkbenchExtensionError('WORKSPACE_NOT_FOUND')
+      const workspace = await this.requireWritable(await this.checkAlias(record.config.alias, { register: true }))
+      delete request.cwd
+      request.workspaceId = workspace.workspace_id
       return
     }
     if (this.config.defaultAlias === undefined) throw new WorkbenchExtensionError('WORKSPACE_NOT_FOUND')
-    await this.requireWritable(await this.checkAlias(this.config.defaultAlias, { register: true }))
+    const workspace = await this.requireWritable(await this.checkAlias(this.config.defaultAlias, { register: true }))
+    request.workspaceId = workspace.workspace_id
   }
 
   async admitPrompt(request) {
@@ -163,14 +223,12 @@ export class WorkspacePolicy {
     const cwd = agent?.session?.header?.cwd
     if (typeof cwd !== 'string') throw new WorkbenchExtensionError('SESSION_NOT_FOUND')
     const located = await this.inspectPath(cwd, 'preview_only')
-    const workspace = await this.registry.resolveByPath(located.canonical)
-    const record = workspace === undefined
-      ? undefined
-      : [...this.aliases.values()].find(value => value.workspaceId === workspace.id)
+    const record = await this.recordForPath(cwd, located.canonical)
+    if (record === undefined) throw new WorkbenchExtensionError('WORKSPACE_NOT_FOUND')
     await this.requireWritable(await this.inspectPath(
       located.canonical,
-      record?.config.mode ?? 'read_write',
-      record?.config.writeProbe ?? false,
+      record.config.mode,
+      record.config.writeProbe,
     ))
   }
 

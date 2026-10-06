@@ -153,6 +153,9 @@ export function loadEmbedConfig(path, enabled) {
     }
     const mode = item.mode ?? 'read_write'
     if (!['read_write', 'preview_only'].includes(mode)) throw configError(`客户端 mode 不合法: ${clientId}`)
+    if (mode === 'preview_only') {
+      throw configError(`客户端 ${clientId} 的 preview_only 无法在 trusted_shared_account 模式下持续约束`)
+    }
     return {
       clientId,
       secret: clientSecret(item, index),

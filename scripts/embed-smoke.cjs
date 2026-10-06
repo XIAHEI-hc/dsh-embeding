@@ -226,6 +226,9 @@ const parent = http.createServer(async (req, res) => {
   assert(events.some(event => event.type === 'ready'));
   assert(events.some(event => event.type === 'initialized' && event.payload.workspace_id));
   assert(events.some(event => event.type === 'session.opened'));
+  assert(events.some(event => event.type === 'connection.changed' && event.payload.state === 'connected'));
+  const initialSessionId = events.findLast(event => event.type === 'session.opened')?.payload.session_id;
+  assert.equal(typeof initialSessionId, 'string');
   const cookies = await embedContext.cookies(dshOrigin);
   assert(cookies.some(cookie => cookie.httpOnly && cookie.sameSite === 'Strict'));
   const iframe = page.frameLocator('#frame');
@@ -236,6 +239,8 @@ const parent = http.createServer(async (req, res) => {
   await editor.waitFor({ timeout: 30000 });
   assert.equal((await editor.innerText()).trim(), initialPrompt);
   assert.equal((await iframe.locator('body').innerText()).includes(initialPrompt.repeat(2)), false);
+  await iframe.getByRole('button', { name: /^(发送消息|Send message)$/u }).click();
+  await iframe.getByText(initialPrompt, { exact: true }).waitFor({ timeout: 30000 });
   if (process.env.DSH_SCREENSHOT_DIR) {
     fs.mkdirSync(process.env.DSH_SCREENSHOT_DIR, { recursive: true });
     await page.screenshot({ path: path.join(process.env.DSH_SCREENSHOT_DIR, 'embed-ready.png'), fullPage: true });
@@ -247,9 +252,11 @@ const parent = http.createServer(async (req, res) => {
   await delay(3000);
   const eventsAfterReload = await page.evaluate(() => window.embedEvents);
   assert.equal(eventsAfterReload.some(event => event.type === 'error'), false, 'iframe reload must not emit an error');
+  const restoredSessionId = eventsAfterReload.findLast(event => event.type === 'session.opened')?.payload.session_id;
+  assert.equal(restoredSessionId, initialSessionId, 'iframe reload must restore the same non-blank session');
   assert.deepEqual(browserErrors, []);
   await embedContext.close();
-  console.log('PASS embed: config, official workspace, one-use ticket, cookie, iframe protocol, navigation, draft-only prompt, reload');
+  console.log('PASS embed: config, official workspace, one-use ticket, cookie, iframe protocol, connection, draft-only prompt, same-session reload');
 })().catch(async error => {
   console.error(error.stack || error.message);
   if (smokePage && !smokePage.isClosed()) {
