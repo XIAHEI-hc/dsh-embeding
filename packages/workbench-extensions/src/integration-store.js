@@ -4,12 +4,23 @@ import { dirname, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { WorkbenchExtensionError } from './errors.js'
 
-export function integrationStatePath(value = process.env.PROBE_AI_INTEGRATION_STATE) {
+export function integrationStatePath(value = (
+  process.env.MEMORYLAB_AI_INTEGRATION_STATE ?? process.env.PROBE_AI_INTEGRATION_STATE
+)) {
   return resolve(value ?? resolve(process.env.DSH_HOME ?? process.cwd(), 'extensions/probe-integration.sqlite3'))
 }
 
 export function requestHash(value) {
   return createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex')
+}
+
+function scopeId(metadata) {
+  const projectId = metadata?.project_id
+  const userId = metadata?.user_id
+  if ((typeof projectId === 'string') === (typeof userId === 'string')) {
+    throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH')
+  }
+  return projectId ?? userId
 }
 
 export class IntegrationStore {
@@ -108,7 +119,7 @@ export class IntegrationStore {
         workspaceId,
         clientId,
         instanceId,
-        projectId: metadata.project_id,
+        projectId: scopeId(metadata),
         functionType: metadata.function_type,
       })
       const updated = this.db.prepare(`UPDATE integration_prepare_requests
@@ -141,7 +152,7 @@ export class IntegrationStore {
         workspaceId,
         clientId,
         instanceId,
-        projectId: metadata.project_id,
+        projectId: scopeId(metadata),
         functionType: metadata.function_type,
       })
       this.db.exec('COMMIT')

@@ -11,6 +11,7 @@
     "@deepseek-ai/dsh-api-session-controller": "file:vendor/official-web-forks/dsh-api-session-controller",
     "@deepseek-ai/dsh-client-connection": "file:vendor/official-web-forks/dsh-client-connection",
     "@dsh-workbench/probe-data-tools": "file:packages/probe-data-tools",
+    "@dsh-workbench/memorylab-data-tools": "file:packages/memorylab-data-tools",
     "@dsh-workbench/extensions": "file:packages/workbench-extensions"
   },
   "devDependencies": {

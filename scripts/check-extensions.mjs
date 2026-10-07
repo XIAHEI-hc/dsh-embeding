@@ -6,6 +6,7 @@ const roots = [
   resolve('packages/workbench-extensions/src'),
   resolve('packages/workbench-extensions/lib'),
   resolve('packages/probe-data-tools/src'),
+  resolve('packages/memorylab-data-tools/src'),
 ]
 
 function files(root) {

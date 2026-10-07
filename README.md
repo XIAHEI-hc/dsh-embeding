@@ -37,6 +37,8 @@ Copy-Item .env.example .env
 
 详细本地、Docker、HTTPS、父系统后端和升级步骤见 [docs/EMBEDDING.md](docs/EMBEDDING.md)。API 合同位于 `contracts/openapi.json`、`contracts/embed-message.schema.json` 和 `contracts/error-codes.json`；父页面参考位于 `examples/host-integration/`。
 
+EzProber 和 Memory Lab 使用同一套不可变会话绑定基础设施，但必须部署为两个独立 DSH 实例；单个实例会拒绝同时启用两种宿主集成。Memory Lab 的 CSV 工具、独立端口/数据卷、联调和回滚说明见 [docs/MEMORYLAB_INTEGRATION.md](docs/MEMORYLAB_INTEGRATION.md)。
+
 扩展改变 Host 组合，修改配置、扩展源码或受控 fork 后必须重启 Web 进程。启动器会生成 `DSH_HOME/workbench-web.patch.json`，并写入仓库扩展的绝对 `file:` URL。`patches/web-embedding.patch.template.json` 仅适用于扩展已经通过 DSH 插件管理器安装的 profile，不是本仓库的直接启动入口。
 
 ## Docker

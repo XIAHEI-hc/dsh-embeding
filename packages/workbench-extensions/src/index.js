@@ -243,7 +243,7 @@ export async function apply(ctx) {
 
   if (embedConfig === undefined) {
     if (integrationConfig !== undefined) {
-      throw new WorkbenchExtensionError('CONFIG_INVALID', { message: 'Probe 集成需要同时启用 iframe 嵌入' })
+      throw new WorkbenchExtensionError('CONFIG_INVALID', { message: '宿主集成需要同时启用 iframe 嵌入' })
     }
     return
   }

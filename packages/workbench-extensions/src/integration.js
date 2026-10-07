@@ -24,7 +24,7 @@ async function verifyContext(config, contextId, signal) {
   const timeout = setTimeout(() => controller.abort(new Error('verify timeout')), config.verifyTimeoutMs)
   const combined = signal === undefined ? controller.signal : AbortSignal.any([signal, controller.signal])
   try {
-    const response = await fetch(`${config.probeApiOrigin}/api/ai/contexts/${encodeURIComponent(contextId)}/verify`, {
+    const response = await fetch(`${config.apiOrigin}/api/ai/contexts/${encodeURIComponent(contextId)}/verify`, {
       headers: {
         accept: 'application/json',
         authorization: `Bearer ${config.toolSecret}`,
@@ -40,9 +40,12 @@ async function verifyContext(config, contextId, signal) {
       }
       throw new WorkbenchExtensionError('INTEGRATION_UPSTREAM_UNAVAILABLE')
     }
+    const scopeIdentity = config.integrationKind === 'memorylab'
+      ? body.context.user_id
+      : body.context.project_id
     if (body.context.dsh_instance_id !== config.instanceId
-      || !['SITE_DESIGN', 'PROBECARD_DESIGN'].includes(body.context.function_type)
-      || typeof body.context.project_id !== 'string') {
+      || !config.allowedFunctionTypes.includes(body.context.function_type)
+      || typeof scopeIdentity !== 'string') {
       throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH')
     }
     return body.context

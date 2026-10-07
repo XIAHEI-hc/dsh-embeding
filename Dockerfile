@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/workbench-extensions ./packages/workbench-extensions
 COPY packages/probe-data-tools ./packages/probe-data-tools
+COPY packages/memorylab-data-tools ./packages/memorylab-data-tools
 COPY vendor/official-web-forks ./vendor/official-web-forks
 RUN npm ci --omit=dev --no-audit --no-fund && npm install --global pnpm@10.12.1
 
@@ -14,6 +15,7 @@ WORKDIR /app
 COPY package.json package-lock.json pyproject.toml constraints.txt ./
 COPY packages/workbench-extensions ./packages/workbench-extensions
 COPY packages/probe-data-tools ./packages/probe-data-tools
+COPY packages/memorylab-data-tools ./packages/memorylab-data-tools
 COPY vendor/official-web-forks ./vendor/official-web-forks
 COPY workbench ./workbench
 COPY vendor/official-sdk ./vendor/official-sdk

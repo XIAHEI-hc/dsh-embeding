@@ -67,6 +67,45 @@ test('integration bindings survive restart and remain immutable', () => {
   } finally { f.close() }
 })
 
+test('Memory Lab user scope persists through the shared immutable binding store', () => {
+  const f = fixture()
+  const store = new IntegrationStore(f.path)
+  try {
+    store.bind({
+      clientId: 'memorylab', contextId: 'context-user', workspaceId: 'workspace-a',
+      sessionId: 'session-user', instanceId: 'dsh-memorylab',
+      metadata: { user_id: 'user-a', function_type: 'MEMORYLAB_CHN' },
+    })
+    assert.deepEqual(store.requireActive('session-user'), {
+      sessionId: 'session-user', contextId: 'context-user', workspaceId: 'workspace-a',
+      clientId: 'memorylab', instanceId: 'dsh-memorylab', projectId: 'user-a',
+      functionType: 'MEMORYLAB_CHN', status: 'active',
+    })
+    assert.throws(() => store.bind({
+      clientId: 'memorylab', contextId: 'context-user', workspaceId: 'workspace-a',
+      sessionId: 'session-user', instanceId: 'dsh-memorylab',
+      metadata: { user_id: 'user-b', function_type: 'MEMORYLAB_CHN' },
+    }), { code: 'SESSION_CONTEXT_MISMATCH' })
+  } finally { store.close(); f.close() }
+})
+
+test('integration binding rejects ambiguous or absent upstream scope identity', () => {
+  const f = fixture()
+  const store = new IntegrationStore(f.path)
+  try {
+    const request = {
+      clientId: 'memorylab', contextId: 'context-a', workspaceId: 'workspace-a',
+      sessionId: 'session-a', instanceId: 'dsh-memorylab',
+    }
+    assert.throws(() => store.bind({ ...request, metadata: {
+      project_id: 'project-a', user_id: 'user-a', function_type: 'MEMORYLAB_CHN',
+    } }), { code: 'SESSION_CONTEXT_MISMATCH' })
+    assert.throws(() => store.bind({ ...request, metadata: {
+      function_type: 'MEMORYLAB_CHN',
+    } }), { code: 'SESSION_CONTEXT_MISMATCH' })
+  } finally { store.close(); f.close() }
+})
+
 test('prepare reservations are idempotent and reject changed bodies', () => {
   const f = fixture()
   const store = new IntegrationStore(f.path)

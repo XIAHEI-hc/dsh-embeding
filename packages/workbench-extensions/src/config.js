@@ -204,19 +204,39 @@ export function integrationEnabled(value = process.env.PROBE_AI_INTEGRATION_ENAB
   throw configError('PROBE_AI_INTEGRATION_ENABLED 必须是 true/false 或 1/0')
 }
 
-export function loadIntegrationConfig(enabled = integrationEnabled()) {
-  if (!enabled) return undefined
-  const instanceId = string(process.env.PROBE_AI_DSH_INSTANCE_ID, 'PROBE_AI_DSH_INSTANCE_ID', { max: 128 })
+export function memoryLabIntegrationEnabled(value = process.env.MEMORYLAB_AI_INTEGRATION_ENABLED) {
+  if (value === undefined || value === '' || value === 'false' || value === '0') return false
+  if (value === 'true' || value === '1') return true
+  throw configError('MEMORYLAB_AI_INTEGRATION_ENABLED 必须是 true/false 或 1/0')
+}
+
+export function loadIntegrationConfig(
+  probeEnabled = integrationEnabled(),
+  memoryLabEnabled = memoryLabIntegrationEnabled(),
+) {
+  if (probeEnabled && memoryLabEnabled) {
+    throw configError('单个 DSH 实例不能同时启用 Probe 与 Memory Lab 集成')
+  }
+  if (!probeEnabled && !memoryLabEnabled) return undefined
+  const prefix = memoryLabEnabled ? 'MEMORYLAB_AI' : 'PROBE_AI'
+  const instanceId = string(process.env[`${prefix}_DSH_INSTANCE_ID`], `${prefix}_DSH_INSTANCE_ID`, { max: 128 })
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(instanceId)) {
-    throw configError('PROBE_AI_DSH_INSTANCE_ID 只允许字母、数字、点、下划线和连字符')
+    throw configError(`${prefix}_DSH_INSTANCE_ID 只允许字母、数字、点、下划线和连字符`)
   }
   return {
     instanceId,
-    probeApiOrigin: exactOrigin(process.env.PROBE_AI_API_ORIGIN, 'PROBE_AI_API_ORIGIN'),
-    toolSecret: environmentSecret('PROBE_AI_TOOL_SECRET', 'PROBE_AI_TOOL_SECRET_FILE', 'Probe 工具服务 secret'),
+    integrationKind: memoryLabEnabled ? 'memorylab' : 'probe',
+    apiOrigin: exactOrigin(process.env[`${prefix}_API_ORIGIN`], `${prefix}_API_ORIGIN`),
+    toolSecret: environmentSecret(
+      `${prefix}_TOOL_SECRET`, `${prefix}_TOOL_SECRET_FILE`,
+      `${memoryLabEnabled ? 'Memory Lab' : 'Probe'} 工具服务 secret`,
+    ),
+    allowedFunctionTypes: memoryLabEnabled
+      ? Object.freeze(['MEMORYLAB_CHN'])
+      : Object.freeze(['SITE_DESIGN', 'PROBECARD_DESIGN']),
     verifyTimeoutMs: integer(
-      Number(process.env.PROBE_AI_VERIFY_TIMEOUT_MS || 5000),
-      'PROBE_AI_VERIFY_TIMEOUT_MS',
+      Number(process.env[`${prefix}_VERIFY_TIMEOUT_MS`] || 5000),
+      `${prefix}_VERIFY_TIMEOUT_MS`,
       5000,
       100,
       30000,

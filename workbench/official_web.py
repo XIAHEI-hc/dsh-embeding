@@ -128,6 +128,11 @@ def serve(host, port, upstream_port=18765, trusted_hosts=()):
             if not tools.is_file():
                 raise RuntimeError('缺少 Probe 数据工具插件')
             patches.append({'insert':[{'id':'probe-data-tools','name':tools.as_uri()}]})
+        if os.getenv('MEMORYLAB_AI_INTEGRATION_ENABLED', '').strip().lower() in ('true', '1'):
+            tools = Path(__file__).resolve().parent.parent / 'packages/memorylab-data-tools/src/index.js'
+            if not tools.is_file():
+                raise RuntimeError('缺少 Memory Lab 数据工具插件')
+            patches.append({'insert':[{'id':'memorylab-data-tools','name':tools.as_uri()}]})
     if embed_value in ('true', '1'):
         if not os.getenv('WORKBENCH_WORKSPACE_CONFIG') or not os.getenv('WORKBENCH_EMBED_CONFIG'):
             raise ValueError('启用嵌入时必须设置 WORKBENCH_WORKSPACE_CONFIG 和 WORKBENCH_EMBED_CONFIG')
