@@ -123,6 +123,11 @@ def serve(host, port, upstream_port=18765, trusted_hosts=()):
         # A file URL bypasses profile package-governance for this repository-owned
         # plugin; client-modules still discovers its nearest package.json.
         patches.append({'insert':[{'id':'workbench-extensions','name':(extension.parent / 'src/index.js').as_uri()}]})
+        if os.getenv('PROBE_AI_INTEGRATION_ENABLED', '').strip().lower() in ('true', '1'):
+            tools = Path(__file__).resolve().parent.parent / 'packages/probe-data-tools/src/index.js'
+            if not tools.is_file():
+                raise RuntimeError('缺少 Probe 数据工具插件')
+            patches.append({'insert':[{'id':'probe-data-tools','name':tools.as_uri()}]})
     if embed_value in ('true', '1'):
         if not os.getenv('WORKBENCH_WORKSPACE_CONFIG') or not os.getenv('WORKBENCH_EMBED_CONFIG'):
             raise ValueError('启用嵌入时必须设置 WORKBENCH_WORKSPACE_CONFIG 和 WORKBENCH_EMBED_CONFIG')

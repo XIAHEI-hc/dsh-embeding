@@ -24,7 +24,18 @@ window.__ModuleLoader__.load({
 			parent.postMessage({ protocol: PROTOCOL, version: VERSION, type,
 				channel_id: state.channel_id, request_id: state.request_id, payload }, state.parent_origin);
 		}
+		function integrationPayload(state) {
+			return typeof state.context_id === "string" ? { context_id: state.context_id } : {};
+		}
 		function save(state) { sessionStorage.setItem(KEY, JSON.stringify(state)); }
+		function forceFreshNativeSessions(ctx) {
+			const original = ctx.uiWorkspace.connectWorkspace;
+			const create = (workspaceId) => ctx.sessions.create({ workspaceId });
+			ctx.uiWorkspace.connectWorkspace = create;
+			return () => {
+				if (ctx.uiWorkspace.connectWorkspace === create) ctx.uiWorkspace.connectWorkspace = original;
+			};
+		}
 		function applyDraft(ctx, state, sessionId) {
 			if (state.prompt_applied || typeof state.initial_prompt !== "string" || state.initial_prompt.length === 0) return;
 			const binding = ctx.sessions.binding(sessionId);
@@ -102,10 +113,85 @@ window.__ModuleLoader__.load({
 				workspace_id: state.workspace_id, session_id: sessionId,
 			});
 		}
+		function observeSessionLifecycle(ctx, state) {
+			let selected;
+			let sessions = new Map();
+			let archived = new Set();
+			let catalogInitialized = false;
+			let archiveInitialized = false;
+			const inspectSelection = () => {
+				const sessionId = ctx.uiWorkspace.selection?.getSnapshot()?.sessionId;
+				if (typeof sessionId !== "string" || sessionId === selected) return;
+				const workspace = ctx.workspaces.list.getSnapshot().items
+					.find((item) => item.sessionIds.includes(sessionId));
+				if (workspace?.workspaceId !== state.workspace_id) return;
+				selected = sessionId;
+				state.session_id = sessionId;
+				state.session_binding = "session";
+				save(state);
+				send(state, "session.opened", {
+					workspace_id: state.workspace_id,
+					session_id: sessionId,
+					...integrationPayload(state),
+				});
+			};
+			const inspectCatalog = () => {
+				const snapshot = ctx.sessions.list.getSnapshot();
+				if (snapshot.phase !== "ready") return;
+				const next = new Map(snapshot.ids.map((id) => [id, snapshot.byId[id]]));
+				if (!catalogInitialized) {
+					sessions = next;
+					catalogInitialized = true;
+					return;
+				}
+				for (const [id, summary] of next) {
+					if (!sessions.has(id) && typeof summary?.parentId === "string") {
+						send(state, "session.lifecycle", {
+							action: "forked", session_id: id, parent_session_id: summary.parentId,
+							...integrationPayload(state),
+						});
+					}
+				}
+				for (const id of sessions.keys()) {
+					if (!next.has(id)) send(state, "session.lifecycle", {
+						action: "deleted", session_id: id, ...integrationPayload(state),
+					});
+				}
+				sessions = next;
+			};
+			const inspectArchived = () => {
+				const next = new Set(ctx.workspaces.list.getSnapshot().archivedSessionIds);
+				if (!archiveInitialized) {
+					archived = next;
+					archiveInitialized = true;
+					return;
+				}
+				for (const id of next) if (!archived.has(id)) send(state, "session.lifecycle", {
+					action: "archived", session_id: id, ...integrationPayload(state),
+				});
+				for (const id of archived) if (!next.has(id)) send(state, "session.lifecycle", {
+					action: "unarchived", session_id: id, ...integrationPayload(state),
+				});
+				archived = next;
+			};
+			inspectCatalog();
+			inspectArchived();
+			inspectSelection();
+			const disposers = [
+				ctx.sessions.list.subscribe(() => { inspectCatalog(); inspectSelection(); }),
+				ctx.workspaces.list.subscribe(() => { inspectArchived(); inspectSelection(); }),
+			];
+			if (ctx.uiWorkspace.selection?.subscribe) {
+				disposers.push(ctx.uiWorkspace.selection.subscribe(inspectSelection));
+			}
+			return () => { for (const dispose of disposers) dispose(); };
+		}
 		const inject = ["connection", "sessions", "workspaces", "uiWorkspace", "conversation"];
 		function apply(ctx) {
 			const state = loadState();
 			if (state === undefined) return;
+			const disposeFreshSessions = forceFreshNativeSessions(ctx);
+			ctx.effect(() => disposeFreshSessions, "workbench embed fresh native sessions");
 			const connection = () => {
 				const current = ctx.connection.state.getSnapshot();
 				send(state, "connection.changed", {
@@ -115,7 +201,9 @@ window.__ModuleLoader__.load({
 			const disposeConnection = ctx.connection.state.subscribe(connection);
 			connection();
 			ctx.effect(() => disposeConnection, "workbench embed connection events");
-			void initialize(ctx, state).catch((error) => {
+			void initialize(ctx, state).then(() => {
+				ctx.effect(() => observeSessionLifecycle(ctx, state), "workbench embed session lifecycle events");
+			}).catch((error) => {
 				console.error("embed-client initialization failed", error);
 				send(state, "error", {
 					code: knownError(error).includes("SESSION_NOT_FOUND") ? "SESSION_NOT_FOUND" : "WORKSPACE_IO_ERROR",

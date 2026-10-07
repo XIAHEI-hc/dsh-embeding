@@ -140,6 +140,9 @@ curl -sS 'https://dsh.example.test/embed/health/ready'
 
 grant 数据库存的是 ticket 哈希，不是明文 ticket。已消费、撤销和过期记录在 24 小时审计保留期之后由分钟级清理任务删除。
 
+EzProber 的业务上下文绑定、Host-only 控制接口、数据库工具配置与回滚方式见
+[Probe 集成](PROBE_INTEGRATION.md)。普通 iframe 集成不需要启用该功能。
+
 ## 已知限制
 
 - 仅可信共享账户；没有每用户全通道 ACL，也没有每 session 独立容器。

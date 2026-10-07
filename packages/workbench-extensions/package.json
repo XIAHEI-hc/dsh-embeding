@@ -9,6 +9,7 @@
     "./client": "./lib/client.js",
     "./config": "./src/config.js",
     "./grants": "./src/grants.js",
+    "./integration-store": "./src/integration-store.js",
     "./workspaces": "./src/workspaces.js"
   },
   "dsh": {

@@ -119,6 +119,22 @@ function clientSecret(item, index) {
   return value
 }
 
+function environmentSecret(envName, fileName, label) {
+  const fromEnv = process.env[envName]
+  const file = process.env[fileName]
+  if ((fromEnv === undefined) === (file === undefined)) {
+    throw configError(`${label} 必须且只能通过 ${envName} 或 ${fileName} 配置`)
+  }
+  let value
+  try { value = fromEnv ?? readFileSync(file, 'utf8').trim() } catch (error) {
+    throw configError(`无法读取 ${label}`, error)
+  }
+  if (typeof value !== 'string' || value.length < 32 || value.length > 4096) {
+    throw configError(`${label} 必须为 32..4096 字符`)
+  }
+  return value
+}
+
 export function loadEmbedConfig(path, enabled) {
   if (!enabled) return undefined
   if (!path) throw configError('启用嵌入时必须设置 WORKBENCH_EMBED_CONFIG')
@@ -180,4 +196,30 @@ export function embedEnabled(value = process.env.WORKBENCH_EMBED_ENABLED) {
   if (value === undefined || value === '' || value === 'false' || value === '0') return false
   if (value === 'true' || value === '1') return true
   throw configError('WORKBENCH_EMBED_ENABLED 必须是 true/false 或 1/0')
+}
+
+export function integrationEnabled(value = process.env.PROBE_AI_INTEGRATION_ENABLED) {
+  if (value === undefined || value === '' || value === 'false' || value === '0') return false
+  if (value === 'true' || value === '1') return true
+  throw configError('PROBE_AI_INTEGRATION_ENABLED 必须是 true/false 或 1/0')
+}
+
+export function loadIntegrationConfig(enabled = integrationEnabled()) {
+  if (!enabled) return undefined
+  const instanceId = string(process.env.PROBE_AI_DSH_INSTANCE_ID, 'PROBE_AI_DSH_INSTANCE_ID', { max: 128 })
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(instanceId)) {
+    throw configError('PROBE_AI_DSH_INSTANCE_ID 只允许字母、数字、点、下划线和连字符')
+  }
+  return {
+    instanceId,
+    probeApiOrigin: exactOrigin(process.env.PROBE_AI_API_ORIGIN, 'PROBE_AI_API_ORIGIN'),
+    toolSecret: environmentSecret('PROBE_AI_TOOL_SECRET', 'PROBE_AI_TOOL_SECRET_FILE', 'Probe 工具服务 secret'),
+    verifyTimeoutMs: integer(
+      Number(process.env.PROBE_AI_VERIFY_TIMEOUT_MS || 5000),
+      'PROBE_AI_VERIFY_TIMEOUT_MS',
+      5000,
+      100,
+      30000,
+    ),
+  }
 }
