@@ -21,6 +21,7 @@ COPY packages/memorylab-data-tools ./packages/memorylab-data-tools
 COPY packages/memorylab-skill-provider ./packages/memorylab-skill-provider
 COPY packages/workbench-runtime-gateway ./packages/workbench-runtime-gateway
 COPY vendor/official-web-forks ./vendor/official-web-forks
+COPY scripts ./scripts
 COPY workbench ./workbench
 COPY vendor/official-sdk ./vendor/official-sdk
 RUN pip install -c constraints.txt --no-cache-dir ./vendor/official-sdk/*.whl .

@@ -62,11 +62,15 @@ for (const [name, runtime] of [['runner-a', 'runner-a'], ['runner-b', 'runner-b'
   await put(`${name}/embed.json`, embedConfig(), 0o644)
   await put(`${name}.env`, [
     'WORKBENCH_ROLE=runner',
+    'WORKBENCH_INTEGRATION_MODE=embedded_multi_user',
     'WORKBENCH_EMBED_ENABLED=true',
     'MEMORYLAB_AI_INTEGRATION_ENABLED=false',
     'WORKBENCH_PUBLIC_URL=http://dsh-gateway:8765',
     'WORKBENCH_DATA_DIR=/data',
     'DSH_HOME=/data/dsh-home',
+    'WORKBENCH_WEB_WORKSPACE=/workdir',
+    'WORKBENCH_RUNNER_BROKER_ORIGIN=http://dsh-gateway:8765',
+    'WORKBENCH_RUNNER_CREDENTIAL_FILE=/private/runner-client-secret',
     'WORKBENCH_WORKSPACE_CONFIG=/private/workspace.json',
     'WORKBENCH_EMBED_CONFIG=/private/embed.json',
     'DSH_PERMISSION_MODE=danger-full-access',
