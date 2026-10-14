@@ -20,6 +20,7 @@
 | native scoped bootstrap smoke | 真实 `localhost:7891` 登录后 bootstrap=200；scope redeem=303；gateway `/embed/bootstrap/redeem`=200；官方 native root=200，并同时收到 scoped 与 runner `dsh-auth-*` cookie。HTTP 转发回归断言 runtime/subject/context/session/grant/proof 全部注入。 |
 | private compose 可复现 | 修正 `examples/deploy/compose.private-runners.yaml` 的 compose-relative env、secret、volume 和 build context 路径；从仓库根目录直接 `docker compose -f examples/deploy/compose.private-runners.yaml config --quiet` 通过。 |
 | stale heartbeat fence | runtime `/catalog` 将超过 60 秒未 heartbeat 的历史 `installed` ACK 转为 `unreachable`，native provider 不再暴露陈旧技能；新增测试覆盖。 |
+| runtime provider path and fixed package integrity | provider 已将 Memory Lab API origin 正确映射到 `/api/skills/runtime/v1`；demo seed 使用 content-addressed `approved/<archive_sha256>.zip`。真实 backend/runner 联调中，后台同步完成 `catalog → resolve → ack`，随后 catalog 对 `knowledge-cleanup-assistant` 与 `runtime-probe-35a513fa79` 均返回 `ack_status=installed`，resolve 均返回 200 和 instruction hash。 |
 | queued skill terminal fact | queued `/ml-*` 在切版、停用、revoke 或正文加载失败时，会消费对应 admission queue 并写 `failed`/`cancelled` usage 终态，不再遗留 `admitted`。 |
 | 跨 runtime 拒绝 | B 使用 A 的 context/session/grant 重放 catalog、resolve、admit、usage、ack 均得到 `403 SCOPE_DENIED`。 |
 | live revoke | logout 前旧 scope cookie 访问带 channel 的 embed 为 200；logout 后同一 cookie 为 403。无 scope cookie 的 embed/API 请求为 401。 |
@@ -27,7 +28,7 @@
 | CHN 权限边界 | runtime bridge 现在额外要求 `chn_vis:use`；即使拥有 `ai_workbench:use`，没有 CHN 权限的用户也不能 query/upload。新增测试覆盖。 |
 | WebSocket live fence | gateway 在升级成功后按 live-check interval 重新验证 Memory Lab lease，失效时销毁浏览器与 runner 两端 socket。 |
 | fork pre-persistence admission | 官方 session-controller fork 在生成 child ID 后、`agents.create()` 前触发 `api-session/fork-admission`；DSH 先调用 Memory Lab 的 service-auth runtime association endpoint，以 parent 的 live lease/context/runtime 预绑定 child，再写本地 binding；native fork 持久化失败时通过 `api-session/fork-failed` 在两端精确清理未物化 binding。 |
-| 后台 runtime synchronizer | DSH extension 启动时立即扫描持久化的 active binding，并每 30 秒重试 `catalog → resolve → ack`；按 session 去重、dispose 时取消请求。A/B runner 镜像已在真实 private compose 中重建并重启，启动日志无 activation error。真实 catalog 请求返回 `200`；当前持久化 binding 中仍有历史 grant，服务按设计保留 `pending/unreachable` 投影并等待下一次有效授权绑定，未将该观察误报为 `synced`。 |
+| 后台 runtime synchronizer | DSH extension 启动时立即扫描持久化的 active binding，并每 30 秒重试 `catalog → resolve → ack`；按 session 去重、dispose 时取消请求。A/B runner 镜像已在真实 private compose 中重建并重启，启动日志无 activation error。首次暴露出的 `/catalog` 路径和 demo package path 问题已修复；真实请求随后完成 `catalog → resolve → ack`，两个启用版本均变为 `installed`。 |
 
 ## 实现对应关系
 
