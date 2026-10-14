@@ -50,6 +50,12 @@ Client 插件必须等待官方 workspace controller snapshot。直接在首次�
 - `api-session/fork-failed`：native fork 持久化失败时回滚尚未物化的 child binding；
 - `api-session/prompt-admission`：位于 Agent 恢复和用户内容落盘之前。
 
+多用户 runner 的 gateway 会剥离浏览器 `dsh_scope` cookie，并为每次转发注入由该
+runner 私有 credential 生成的 HMAC scope proof。`dsh-client-connection` fork 只在
+`WORKBENCH_ROLE=runner` 且 `DSH_RUNTIME_ID` 精确匹配时接受该 proof；gateway 仍在
+HTTP、WebSocket 建立和连接存续期间在线检查 Memory Lab lease。standalone/gateway
+进程不会接受此 runner-only admission，因此不能把普通 operator cookie 变成跨用户凭据。
+
 需要此 fork 是因为仅在 `agent/pre-step` 检查太晚，无法保证 `preview_only`、失效目录或未完成 owner binding 不会先产生 durable mutation。扩展继续保留 `agent/pre-step` 作为执行时二次检查。
 
 两个 fork 的 `package.json` 都包含 `workbenchFork.upstreamTag`、`upstreamCommit` 和 `purpose`。根 `package.json` 通过 npm `file:` 依赖替换精确包，Dockerfile 在依赖安装前后复制源目录，避免最终阶段出现悬空 symlink。
