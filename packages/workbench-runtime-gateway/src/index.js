@@ -52,6 +52,32 @@ function runtimeControlSecret(runtime) {
   try { return readFileSync(runtime.controlSecretFile, 'utf8').trim() } catch { return undefined }
 }
 
+async function verifyLiveScope(scope, runtime, verifyOrigin, hostInstanceId, timeoutMs = 5000, fetchImpl = fetch) {
+  if (!verifyOrigin) return { ok: true }
+  const secret = runtimeControlSecret(runtime)
+  if (!secret || !scope.context_id || !scope.session_id || !scope.access_grant_id) return { ok: false, error: 'SCOPE_DENIED' }
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetchImpl(`${verifyOrigin.replace(/\/$/u, '')}/api/ai/contexts/${encodeURIComponent(scope.context_id)}/sessions/${encodeURIComponent(scope.session_id)}/verify`, {
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${secret}`,
+        'x-dsh-instance-id': hostInstanceId,
+        'x-dsh-runtime-id': runtime.runtimeId,
+        'x-dsh-access-grant-id': scope.access_grant_id,
+      },
+      signal: controller.signal,
+    })
+    const body = await response.json().catch(() => undefined)
+    return response.ok && body?.ok === true ? { ok: true } : { ok: false, error: 'SCOPE_DENIED' }
+  } catch {
+    return { ok: false, error: 'RUNTIME_UNAVAILABLE' }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 async function readJson(req, limit = 64 * 1024) {
   const chunks = []; let total = 0
   for await (const chunk of req) { total += chunk.length; if (total > limit) throw new Error('request too large'); chunks.push(chunk) }
@@ -72,6 +98,8 @@ export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret,
   if (!scopeSecret || !serviceSecret) throw new Error('scopeSecret and serviceSecret are required')
   const registry = loadRuntimeRegistry(registryPath)
   const maxAge = maxScopeAgeMs ?? 8 * 60 * 60 * 1000
+  const verifyOrigin = process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN
+  const verifyTimeoutMs = Number(process.env.MEMORYLAB_RUNTIME_VERIFY_TIMEOUT_MS ?? 5000)
   const handoffs = new Map()
   const server = http.createServer(async (req, res) => {
     if (req.url === '/health') return writeJson(res, 200, { status: 'ready', host_instance_id: registry.hostInstanceId })
@@ -108,11 +136,15 @@ export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret,
     }
     const target = targetFor(req, registry, scopeSecret, Date.now(), maxAge)
     if (target.error) return writeJson(res, target.error === 'AUTH_REQUIRED' ? 401 : 403, { error: { code: target.error } })
+    const live = await verifyLiveScope(target.scope, target.runtime, verifyOrigin, registry.hostInstanceId, verifyTimeoutMs, fetchImpl)
+    if (!live.ok) return writeJson(res, live.error === 'RUNTIME_UNAVAILABLE' ? 503 : 403, { error: { code: live.error } })
     return proxyHttp(req, res, target.runtime.internalOrigin, target.scope)
   })
-  server.on('upgrade', (req, socket, head) => {
+  server.on('upgrade', async (req, socket, head) => {
     const target = targetFor(req, registry, scopeSecret, Date.now(), maxAge)
     if (target.error) { socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); socket.destroy(); return }
+    const live = await verifyLiveScope(target.scope, target.runtime, verifyOrigin, registry.hostInstanceId, verifyTimeoutMs, fetchImpl)
+    if (!live.ok) { socket.write(`HTTP/1.1 ${live.error === 'RUNTIME_UNAVAILABLE' ? 503 : 403} Forbidden\r\nConnection: close\r\n\r\n`); socket.destroy(); return }
     proxyUpgrade(req, socket, head, target.runtime.internalOrigin, target.scope)
   })
   return { server, registry }

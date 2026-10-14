@@ -16,3 +16,10 @@ The generated `runtime-secrets.json` is the Memory Lab control-plane mapping for
 `AI_TOOL_RUNTIME_SECRETS_JSON`; inject its JSON contents into the Memory Lab
 backend environment through the deployment secret manager. The runner credential
 files must never be replaced with the shared `AI_TOOL_SERVICE_SECRET`.
+
+The gateway must also receive `MEMORYLAB_RUNTIME_VERIFY_ORIGIN`, pointing to the
+private backend service (for example `http://memorylab-api:9000`). It uses the
+runtime credential and exact `context_id/session_id/access_grant_id` from the
+scope cookie to perform a live session-lease check before forwarding every
+native HTTP or WebSocket request. If the backend is unavailable or the grant is
+revoked, the gateway fails closed.
