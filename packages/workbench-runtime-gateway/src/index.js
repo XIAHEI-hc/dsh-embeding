@@ -195,7 +195,12 @@ function proxyUpgrade(req, socket, head, origin, scope, runtime, verify, liveInt
   const target = new URL(req.url ?? '/', origin)
   const upstream = http.request({ protocol: target.protocol, hostname: target.hostname, port: target.port, path: `${target.pathname}${target.search}`, method: 'GET', headers: { ...proxyHeaders(req, scope, runtime), connection: 'Upgrade' } })
   upstream.on('upgrade', (response, upstreamSocket, upstreamHead) => {
-    socket.write(`HTTP/1.1 101 Switching Protocols\r\n${Object.entries(response.headers).filter(([key]) => key !== 'connection').map(([key, value]) => `${key}: ${value}`).join('\r\n')}\r\n\r\n`)
+    // The browser requires Connection: Upgrade on the forwarded handshake.
+    const headers = Object.entries(response.headers)
+      .filter(([key]) => key !== 'connection')
+      .map(([key, value]) => `${key}: ${value}`)
+    headers.push('connection: Upgrade')
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\n${headers.join('\r\n')}\r\n\r\n`)
     if (upstreamHead.length) socket.write(upstreamHead)
     if (head.length) upstreamSocket.write(head)
     upstreamSocket.pipe(socket).pipe(upstreamSocket)
