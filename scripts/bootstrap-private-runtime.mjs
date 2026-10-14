@@ -19,9 +19,9 @@ function workspaceConfig() {
   return JSON.stringify({
     schema_version: 1,
     auto_create_user_directories: false,
-    allowed_roots: ['/workdir'],
+    allowed_roots: ['/data/workdir'],
     default_alias: 'private-memory-lab',
-    workspaces: [{ alias: 'private-memory-lab', path: '/workdir', title: 'Private Memory Lab', mode: 'read_write', write_probe: true }],
+    workspaces: [{ alias: 'private-memory-lab', path: '/data/workdir', title: 'Private Memory Lab', mode: 'read_write', write_probe: true }],
   }, null, 2)
 }
 function embedConfig() {
@@ -43,8 +43,8 @@ const registry = {
   public_origin: 'http://dsh-gateway:8765',
   host_instance_id: process.env.MEMORYLAB_DSH_INSTANCE_ID ?? 'memorylab-local-dsh',
   runtimes: [
-    { subject: userA, runtime_id: 'runner-a', internal_origin: 'http://dsh-user-a:8765', status: 'ready' },
-    { subject: userB, runtime_id: 'runner-b', internal_origin: 'http://dsh-user-b:8765', status: 'ready' },
+    { subject: userA, runtime_id: 'runner-a', internal_origin: 'http://dsh-user-a:8765', control_secret_file: '/private/runner-a-client-secret', status: 'ready' },
+    { subject: userB, runtime_id: 'runner-b', internal_origin: 'http://dsh-user-b:8765', control_secret_file: '/private/runner-b-client-secret', status: 'ready' },
   ],
 }
 await put('runtime-registry.json', JSON.stringify(registry, null, 2), 0o644)
@@ -74,7 +74,7 @@ for (const [name, runtime] of [['runner-a', 'runner-a'], ['runner-b', 'runner-b'
     'WORKBENCH_PUBLIC_URL=http://dsh-gateway:8765',
     'WORKBENCH_DATA_DIR=/data',
     'DSH_HOME=/data/dsh-home',
-    'WORKBENCH_WEB_WORKSPACE=/workdir',
+    'WORKBENCH_WEB_WORKSPACE=/data/workdir',
     'WORKBENCH_RUNNER_BROKER_ORIGIN=http://dsh-gateway:8765',
     'WORKBENCH_RUNNER_CREDENTIAL_FILE=/private/runner-client-secret',
     'WORKBENCH_WORKSPACE_CONFIG=/private/workspace.json',

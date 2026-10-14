@@ -39,7 +39,10 @@ export function loadRuntimeRegistry(pathValue = process.env.WORKBENCH_RUNTIME_RE
     subjects.add(subject); runtimeIds.add(runtimeId)
     const status = item.status ?? 'ready'
     if (!['ready', 'provisioning', 'disabled'].includes(status)) fail(`runtime 状态不合法: ${runtimeId}`)
-    return Object.freeze({ subject, runtimeId, internalOrigin: exactOrigin(item.internal_origin, `runtimes[${index}].internal_origin`), status })
+    const controlSecretFile = item.control_secret_file === undefined
+      ? undefined
+      : requiredString(item.control_secret_file, `runtimes[${index}].control_secret_file`, 1024)
+    return Object.freeze({ subject, runtimeId, internalOrigin: exactOrigin(item.internal_origin, `runtimes[${index}].internal_origin`), status, controlSecretFile })
   })
   return Object.freeze({ schemaVersion: '1.0', hostInstanceId, runtimes: Object.freeze(runtimes) })
 }

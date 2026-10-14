@@ -11,6 +11,14 @@ services:
         source: ./examples/deploy/private/runtime-registry.json
         target: /private/runtime-registry.json
         read_only: true
+      - type: bind
+        source: ./examples/deploy/private/runner-a/runner-client-secret
+        target: /private/runner-a-client-secret
+        read_only: true
+      - type: bind
+        source: ./examples/deploy/private/runner-b/runner-client-secret
+        target: /private/runner-b-client-secret
+        read_only: true
     ports:
       - "127.0.0.1:${DSH_GATEWAY_PORT:-8765}:8765"
     networks: [dsh-internal]
@@ -23,7 +31,6 @@ services:
     env_file: ./examples/deploy/private/runner-a.env
     volumes:
       - user-a-data:/data
-      - user-a-work:/workdir
       - type: bind
         source: ./examples/deploy/private/runner-a
         target: /private
@@ -42,7 +49,6 @@ services:
     env_file: ./examples/deploy/private/runner-b.env
     volumes:
       - user-b-data:/data
-      - user-b-work:/workdir
       - type: bind
         source: ./examples/deploy/private/runner-b
         target: /private
@@ -58,9 +64,7 @@ services:
 
 volumes:
   user-a-data:
-  user-a-work:
   user-b-data:
-  user-b-work:
 
 networks:
   dsh-internal:

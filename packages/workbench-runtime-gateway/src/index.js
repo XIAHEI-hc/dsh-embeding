@@ -1,5 +1,6 @@
 import http from 'node:http'
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { loadRuntimeRegistry, runtimeForSubject } from '../../workbench-extensions/src/runtime-registry.js'
 
 const COOKIE = 'dsh_scope'
@@ -46,6 +47,11 @@ function serviceAuthorized(req, secret) {
   return actual.length === expected.length && timingSafeEqual(actual, expected)
 }
 
+function runtimeControlSecret(runtime) {
+  if (typeof runtime.controlSecretFile !== 'string') return undefined
+  try { return readFileSync(runtime.controlSecretFile, 'utf8').trim() } catch { return undefined }
+}
+
 async function readJson(req, limit = 64 * 1024) {
   const chunks = []; let total = 0
   for await (const chunk of req) { total += chunk.length; if (total > limit) throw new Error('request too large'); chunks.push(chunk) }
@@ -80,6 +86,16 @@ export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret,
         handoffs.set(scopeTicket, { token, expiresAt: Date.now() + 60_000 })
         return writeJson(res, 200, { accepted: true, runtime_id: runtime.runtimeId, scope_ticket: scopeTicket })
       } catch (error) { return writeJson(res, error.code === 'RUNTIME_NOT_PROVISIONED' ? 409 : 422, { error: { code: error.code ?? 'INVALID_SCOPE' } }) }
+    }
+    if (req.url?.startsWith('/internal/control/') && ['GET', 'POST'].includes(req.method)) {
+      if (!serviceAuthorized(req, serviceSecret)) return writeJson(res, 401, { error: { code: 'AUTH_REQUIRED' } })
+      const subject = req.headers['x-dsh-subject']
+      if (typeof subject !== 'string' || subject.length === 0) return writeJson(res, 422, { error: { code: 'INVALID_SCOPE' } })
+      let runtime
+      try { runtime = runtimeForSubject(registry, subject) } catch (error) { return writeJson(res, 409, { error: { code: error.code ?? 'RUNTIME_NOT_PROVISIONED' } }) }
+      const credential = runtimeControlSecret(runtime)
+      if (!credential) return writeJson(res, 503, { error: { code: 'RUNTIME_UNAVAILABLE' } })
+      return proxyControl(req, res, runtime.internalOrigin, credential)
     }
     if (req.url?.startsWith('/scope/redeem') && req.method === 'GET') {
       const url = new URL(req.url, 'http://gateway.local')
@@ -135,4 +151,15 @@ function proxyUpgrade(req, socket, head, origin, scope) {
   })
   upstream.on('error', () => socket.destroy())
   upstream.end()
+}
+
+function proxyControl(req, res, origin, credential) {
+  const target = new URL(req.url.replace(/^\/internal\/control/u, '') || '/', origin)
+  const headers = { ...req.headers, host: target.host, authorization: `Bearer ${credential}` }
+  delete headers['x-dsh-subject']
+  const upstream = http.request({ protocol: target.protocol, hostname: target.hostname, port: target.port, path: `${target.pathname}${target.search}`, method: req.method, headers }, response => {
+    res.writeHead(response.statusCode ?? 502, response.headers); response.pipe(res)
+  })
+  upstream.on('error', error => { if (!res.headersSent) writeJson(res, 502, { error: { code: 'RUNTIME_UNAVAILABLE', message: error.message } }); else res.destroy(error) })
+  req.pipe(upstream)
 }
