@@ -117,7 +117,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
       const contextId = oneString(body.context_id, 'context_id')
       const alias = oneString(body.workspace_alias, 'workspace_alias', 128)
       integrationRequestId = oneString(body.request_id, 'request_id', 128)
-      const accessGrantId = body.access_grant_id === undefined ? undefined : oneString(body.access_grant_id, 'access_grant_id', 36)
+      const accessGrantId = oneString(body.access_grant_id, 'access_grant_id', 36)
       if (!client.workspaceAliases.includes(alias)) throw new WorkbenchExtensionError('EMBED_SCOPE_DENIED')
       const workspace = await policy.requireWritable(await policy.checkAlias(alias, { register: true }))
       const requestedSessionId = body.session_id === undefined
@@ -180,7 +180,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
         ? undefined
         : oneString(body.parent_session_id, 'parent_session_id')
       oneString(body.request_id, 'request_id', 128)
-      const accessGrantId = body.access_grant_id === undefined ? undefined : oneString(body.access_grant_id, 'access_grant_id', 36)
+      const accessGrantId = oneString(body.access_grant_id, 'access_grant_id', 36)
       const workspace = await policy.requireWritable(await policy.checkWorkspaceId(workspaceId))
       if (workspace.alias === null || !client.workspaceAliases.includes(workspace.alias)) {
         throw new WorkbenchExtensionError('EMBED_SCOPE_DENIED')
