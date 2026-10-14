@@ -89,6 +89,23 @@ test('Memory Lab user scope persists through the shared immutable binding store'
   } finally { store.close(); f.close() }
 })
 
+test('Memory Lab binding retains the exact login grant for provider scope', () => {
+  const f = fixture()
+  const store = new IntegrationStore(f.path)
+  try {
+    const request = {
+      clientId: 'memorylab', contextId: 'context-user', workspaceId: 'workspace-a',
+      sessionId: 'session-user', instanceId: 'dsh-memorylab',
+      metadata: { user_id: 'user-a', function_type: 'MEMORYLAB_CHN',
+        runtime_id: 'runner-a', access_grant_id: 'grant-a' },
+    }
+    store.bind(request)
+    assert.equal(store.requireActive('session-user').accessGrantId, 'grant-a')
+    store.bind({ ...request, metadata: { ...request.metadata, access_grant_id: 'grant-b' } })
+    assert.equal(store.requireActive('session-user').accessGrantId, 'grant-b')
+  } finally { store.close(); f.close() }
+})
+
 test('integration binding rejects ambiguous or absent upstream scope identity', () => {
   const f = fixture()
   const store = new IntegrationStore(f.path)
