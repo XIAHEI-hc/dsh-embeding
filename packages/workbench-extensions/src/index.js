@@ -455,7 +455,7 @@ export async function apply(ctx) {
     // already has the service.  Registering through the injected child keeps
     // the provider in the agent's scope and prevents a per-session provider
     // from becoming global.
-    agent.ctx.inject(['skills'], (skillsCtx) => {
+    return agent.ctx.inject(['skills'], (skillsCtx) => {
       skillsCtx.skills.registerProvider(() => installed.provider)
       registeredProviders.add(agent)
     })
@@ -500,7 +500,7 @@ export async function apply(ctx) {
         if (error?.code === 'CONTEXT_NOT_BOUND') return
         throw error
       }
-      registerAgentProvider(agent, installed)
+      await registerAgentProvider(agent, installed)
       const { binding, scope } = installed
       try {
         await synchronizeRemoteProvider({
@@ -560,7 +560,7 @@ export async function apply(ctx) {
         if (names.length > 1) throw new WorkbenchExtensionError('SKILL_MULTIPLE')
         if (names.length === 1) {
           const installed = agentProviders.get(payload.agent) ?? ensureRemoteProvider(payload.agent, payload.signal)
-          registerAgentProvider(payload.agent, installed)
+          await registerAgentProvider(payload.agent, installed)
           const candidate = (await installed.provider.list({ signal: payload.signal })).find(item => item.name === names[0])
           const queue = admittedPrompts.get(payload.agent.session.id) ?? []
           const queuedIndex = queue.findIndex(item => item.skillName === names[0])
