@@ -35,7 +35,9 @@ Client 插件必须等待官方 workspace controller snapshot。直接在首次�
 基于上游 `packages/client/connection`，只增加：
 
 - `ctx.connection.issueBrowserSession(request)`：先运行现有 `isTrustedApiRequest`，再调用官方 BrowserAuth 签发 authority-bound session；失败返回拒绝状态。
-- `connection.cookieSecure`：公开 origin 为 HTTPS 时为官方 Cookie 增加 Secure；HttpOnly 和 SameSite=Strict 保持官方实现。
+ - `connection.cookieSecure`：公开 origin 为 HTTPS 时为官方 Cookie 增加 Secure；HttpOnly 和 SameSite=Strict 保持官方实现。
+ private runner 的 `isTrustedApiRequest` 在解析 Host 后接受仅由 runner 私有 credential 生成、且绑定
+ subject/runtime/context/session/grant 的 scoped proof；普通请求仍执行官方 Host/Origin 同源检查。
 
 需要此 fork 是因为公开 rc.2 没有供可信 bootstrap 调用的浏览器 credential issuance API。实现没有复制启动 token、没有共享固定 token、没有绕过 Host/Origin 检查，也没有伪造 Origin。
 

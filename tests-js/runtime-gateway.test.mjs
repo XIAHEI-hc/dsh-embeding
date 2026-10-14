@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createRuntimeGateway } from '@dsh-workbench/runtime-gateway'
 import http from 'node:http'
+import { createHmac } from 'node:crypto'
 
 test('scope token is opaque, signed, and expires', () => {
   const issuedAt = 1_000_000
@@ -49,7 +50,8 @@ test('gateway binds only a registry-owned subject and issues HttpOnly scope cook
 
 test('gateway performs a live Memory Lab lease check before forwarding native requests', async () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-gateway-live-'))
-  const upstream = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/plain' }); res.end('runner-ok') })
+  let forwardedHeaders
+  const upstream = http.createServer((req, res) => { forwardedHeaders = req.headers; res.writeHead(200, { 'content-type': 'text/plain' }); res.end('runner-ok') })
   await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve))
   const upstreamAddress = upstream.address()
   const registryPath = join(root, 'registry.json')
@@ -75,6 +77,13 @@ test('gateway performs a live Memory Lab lease check before forwarding native re
   const forwarded = await fetch(`${base}/api/native`, { headers: { cookie } })
   assert.equal(forwarded.status, 200)
   assert.equal(await forwarded.text(), 'runner-ok')
+  assert.equal(forwardedHeaders['x-dsh-runtime-id'], 'runner-a')
+  assert.equal(forwardedHeaders['x-dsh-scope-subject'], 'user-a')
+  assert.equal(forwardedHeaders['x-dsh-scope-context-id'], 'ctx-a')
+  assert.equal(forwardedHeaders['x-dsh-scope-session-id'], 'session-a')
+  assert.equal(forwardedHeaders['x-dsh-access-grant-id'], 'grant-a')
+  const proofBody = JSON.stringify({ subject: 'user-a', runtime_id: 'runner-a', context_id: 'ctx-a', session_id: 'session-a', access_grant_id: 'grant-a' })
+  assert.equal(forwardedHeaders['x-dsh-scope-proof'], createHmac('sha256', 'runner-secret').update(proofBody).digest('base64url'))
   allowed = false
   const revoked = await fetch(`${base}/api/native`, { headers: { cookie } })
   assert.equal(revoked.status, 403)

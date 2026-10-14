@@ -208,6 +208,11 @@ function isTrustedApiRequest(request, trustedHosts) {
 	if (host === void 0) return false;
 	const hostUrl = parseAuthority(host);
 	if (hostUrl === void 0) return false;
+	// A private runner is addressed by the trusted scoped gateway with its
+	// internal Host while the browser Origin remains the public parent origin.
+	// The HMAC-bound admission proof is the transport identity in this mode;
+	// ordinary direct requests still use the strict Host/Origin fence below.
+	if (scopedAdmission(request)) return true;
 	if (!isLoopbackHostname(hostUrl.hostname) && !isTrustedAuthority(hostUrl, trustedHosts)) return false;
 	if (header$1(request.headers, "sec-fetch-site") === "cross-site") return false;
 	const origin = header$1(request.headers, "origin");
