@@ -35,6 +35,8 @@
 | 同浏览器换用户 | Memory Lab logout 清除 `dsh.embed.pending.v1` sessionStorage；下一用户不会继承上一用户的 iframe handoff，HttpOnly scope cookie 由新 bootstrap 替换。 |
 | CHN 权限边界 | runtime bridge 现在额外要求 `chn_vis:use`；即使拥有 `ai_workbench:use`，没有 CHN 权限的用户也不能 query/upload。新增测试覆盖。 |
 | WebSocket live fence | gateway 在升级成功后按 live-check interval 重新验证 Memory Lab lease，失效时销毁浏览器与 runner 两端 socket。 |
+| WebSocket gateway handshake | 现场原始握手曾返回 `101` 但遗漏 `Connection: Upgrade`，浏览器因此反复断线；修复转发头后，真实网关握手返回 `101`、`Upgrade: websocket`、`Connection: Upgrade`，Node WebSocket 客户端保持连接并通过 6 秒 live-check。 |
+| runner workspace seed | runner 空数据卷首次启动从只读 `/seed` 初始化 `/data/workdir`；已有用户文件时不覆盖。`tests/test_runtime_roles.py` 5/5 通过，并在 A/B 容器实际看到 `seed_runtime_probe.py` 与 `bf-screenshots/*`。 |
 | fork pre-persistence admission | 官方 session-controller fork 在生成 child ID 后、`agents.create()` 前触发 `api-session/fork-admission`；DSH 先调用 Memory Lab 的 service-auth runtime association endpoint，以 parent 的 live lease/context/runtime 预绑定 child，再写本地 binding；native fork 持久化失败时通过 `api-session/fork-failed` 在两端精确清理未物化 binding。 |
 | 后台 runtime synchronizer | DSH extension 启动时立即扫描持久化的 active binding，并每 30 秒重试 `catalog → resolve → ack`；按 session 去重、dispose 时取消请求。A/B runner 镜像已在真实 private compose 中重建并重启，启动日志无 activation error。首次暴露出的 `/catalog` 路径和 demo package path 问题已修复；真实请求随后完成 `catalog → resolve → ack`，两个启用版本均变为 `installed`。 |
 
@@ -53,7 +55,7 @@
 
 - ISO-09 至 ISO-12 的完整 create/fork、浏览器切换、旧 cookie 和生命周期矩阵。
 - ISO-13 WS 已连接时撤销/禁用的浏览器实测。
-- 浏览器现场尝试：Memory Lab mock login/bootstrap 成功，gateway scope redeem 命令行返回 303/200；Codex IAB 对 `localhost:8875` 被客户端阻断，改为 `127.0.0.1:8875` 后 iframe 仍被 IAB 网络拒绝连接，原生 Chrome 自动化未完成，因此不计入浏览器 PASS。
+- 浏览器现场尝试：修复网关 WebSocket 握手头并重建到 `localhost:8875` 后，Codex IAB 已真实加载官方 DSH iframe，显示 `Private Memory Lab` 工作区和官方预览弹窗；仍未完成“继续”后的 native `initialized` 消息、官方 `/` 技能菜单、真实模型发送和 CHN 工具调用，因此不计入完整浏览器 PASS。此前的 `WORKSPACE_NOT_FOUND` 由非法 WebSocket 握手触发，不能作为当前工作区不存在的结论。
 - SKL-05 真实模型收到指定 hash instruction 并完成 CHN 工具调用；当前已验证 receipt/usage 链路，未声称模型质量通过。
 - SKL-09 至 SKL-17 的现场切版、断连缓存、排队停用、terminal usage 和多 `/ml-*` 提交矩阵。
 - REC-01 gateway/runner 重启恢复、REG-01 独立 DSH 回归、PRO-03 单边升级/停机、OPS-01 回滚覆盖。
