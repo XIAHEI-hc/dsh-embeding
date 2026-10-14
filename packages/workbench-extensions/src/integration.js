@@ -20,7 +20,7 @@ function exactKeys(body, allowed) {
   }
 }
 
-async function verifyContext(config, contextId, signal, runtimeRegistry) {
+async function verifyContext(config, contextId, signal, runtimeRegistry, accessGrantId) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(new Error('verify timeout')), config.verifyTimeoutMs)
   const combined = signal === undefined ? controller.signal : AbortSignal.any([signal, controller.signal])
@@ -30,6 +30,7 @@ async function verifyContext(config, contextId, signal, runtimeRegistry) {
         accept: 'application/json',
         authorization: `Bearer ${config.toolSecret}`,
         'x-dsh-instance-id': config.instanceId,
+        ...(accessGrantId === undefined ? {} : { 'x-dsh-access-grant-id': accessGrantId }),
       },
       method: 'GET',
       signal: combined,
@@ -111,10 +112,11 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
     try {
       client = findClient(req)
       const body = await readJson(req)
-      exactKeys(body, ['context_id', 'workspace_alias', 'session_id', 'request_id'])
+      exactKeys(body, ['context_id', 'workspace_alias', 'session_id', 'access_grant_id', 'request_id'])
       const contextId = oneString(body.context_id, 'context_id')
       const alias = oneString(body.workspace_alias, 'workspace_alias', 128)
       integrationRequestId = oneString(body.request_id, 'request_id', 128)
+      const accessGrantId = body.access_grant_id === undefined ? undefined : oneString(body.access_grant_id, 'access_grant_id', 36)
       if (!client.workspaceAliases.includes(alias)) throw new WorkbenchExtensionError('EMBED_SCOPE_DENIED')
       const workspace = await policy.requireWritable(await policy.checkAlias(alias, { register: true }))
       const requestedSessionId = body.session_id === undefined
@@ -133,7 +135,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
         writeJson(res, 200, { ...reserved.response, request_id: id })
         return
       }
-      const metadata = await verifyContext(config, contextId, undefined, runtimeRegistry)
+      const metadata = await verifyContext(config, contextId, undefined, runtimeRegistry, accessGrantId)
       const sessionId = reserved.sessionId
       if (requestedSessionId === undefined) {
         await ctx.sessionController.create({ workspaceId: workspace.workspace_id, sessionId })
@@ -169,7 +171,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
     try {
       const client = findClient(req)
       const body = await readJson(req)
-      exactKeys(body, ['context_id', 'workspace_id', 'session_id', 'parent_session_id', 'request_id'])
+      exactKeys(body, ['context_id', 'workspace_id', 'session_id', 'parent_session_id', 'access_grant_id', 'request_id'])
       const contextId = oneString(body.context_id, 'context_id')
       const workspaceId = oneString(body.workspace_id, 'workspace_id')
       const sessionId = oneString(body.session_id, 'session_id')
@@ -177,11 +179,12 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
         ? undefined
         : oneString(body.parent_session_id, 'parent_session_id')
       oneString(body.request_id, 'request_id', 128)
+      const accessGrantId = body.access_grant_id === undefined ? undefined : oneString(body.access_grant_id, 'access_grant_id', 36)
       const workspace = await policy.requireWritable(await policy.checkWorkspaceId(workspaceId))
       if (workspace.alias === null || !client.workspaceAliases.includes(workspace.alias)) {
         throw new WorkbenchExtensionError('EMBED_SCOPE_DENIED')
       }
-      const metadata = await verifyContext(config, contextId, undefined, runtimeRegistry)
+      const metadata = await verifyContext(config, contextId, undefined, runtimeRegistry, accessGrantId)
       await requireBindableSession(
         ctx, policy, workspaceId, sessionId, contextId, client.clientId, store, parentSessionId,
       )
