@@ -805,6 +805,16 @@ var SessionCommandController = class {
 				throw new RemoteError("gateway/internal", `failed to resolve fork workspace for session "${request.sessionId}": ${String(error)}`, {});
 			}
 			const childId = brandString(`session-${randomUUID()}`);
+			// Host integrations must be able to bind the child to the same
+			// principal as its parent before the child can accept a prompt.  The
+			// hook intentionally runs after the fork source/workspace has been
+			// resolved, but before agents.create persists the child.
+			await this.ctx.waterfall("api-session/fork-admission", {
+				sourceSessionId: request.sessionId,
+				childSessionId: childId,
+				workspaceId: workspace?.id,
+				atSeq: boundary
+			}, () => Promise.resolve());
 			const composition = await this.agents.composeAgent(this.agents.presetForObservation(source));
 			try {
 				const { provider, model } = this.ctx.agentDefaultModel.currentSelection();
@@ -825,6 +835,12 @@ var SessionCommandController = class {
 					setup: composition.setup
 				});
 			} catch (error) {
+				await this.ctx.waterfall("api-session/fork-failed", {
+					sourceSessionId: request.sessionId,
+					childSessionId: childId,
+					workspaceId: workspace?.id,
+					atSeq: boundary
+				}, () => Promise.resolve()).catch(() => {});
 				throw new RemoteError("gateway/internal", `failed to fork session "${request.sessionId}": ${String(error)}`, {});
 			}
 			if (workspace !== void 0) try {

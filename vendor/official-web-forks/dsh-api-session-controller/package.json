@@ -5,7 +5,7 @@
   "workbenchFork": {
     "upstreamTag": "dsh-v0.2.0-rc.2",
     "upstreamCommit": "639ed015397290b3745d163aafe02ffee4aa3f84",
-    "purpose": "Add composable workspace-policy admission events to original create and prompt entry points"
+    "purpose": "Add composable workspace-policy and pre-persistence fork admission events to original session entry points"
   },
   "publishConfig": {
     "access": "public"

@@ -106,6 +106,27 @@ test('Memory Lab binding retains the exact login grant for provider scope', () =
   } finally { store.close(); f.close() }
 })
 
+test('a failed native fork can remove only its pre-bound child binding', () => {
+  const f = fixture()
+  const store = new IntegrationStore(f.path)
+  try {
+    const parent = {
+      clientId: 'memorylab', contextId: 'context-user', workspaceId: 'workspace-a',
+      sessionId: 'session-parent', instanceId: 'dsh-memorylab',
+      metadata: { user_id: 'user-a', function_type: 'MEMORYLAB_CHN',
+        runtime_id: 'runner-a', access_grant_id: 'grant-a' },
+    }
+    store.bind(parent)
+    store.bind({ ...parent, sessionId: 'session-child' })
+    store.bind({ ...parent, sessionId: 'other-child', clientId: 'other-client' })
+    assert.equal(store.removeUnmaterializedBinding('session-child', {
+      contextId: 'context-user', clientId: 'memorylab',
+    }), 1)
+    assert.throws(() => store.requireActive('session-child'), { code: 'CONTEXT_NOT_BOUND' })
+    assert.equal(store.requireActive('other-child').clientId, 'other-client')
+  } finally { store.close(); f.close() }
+})
+
 test('integration binding rejects ambiguous or absent upstream scope identity', () => {
   const f = fixture()
   const store = new IntegrationStore(f.path)

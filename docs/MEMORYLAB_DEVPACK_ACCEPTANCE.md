@@ -24,6 +24,7 @@
 | 同浏览器换用户 | Memory Lab logout 清除 `dsh.embed.pending.v1` sessionStorage；下一用户不会继承上一用户的 iframe handoff，HttpOnly scope cookie 由新 bootstrap 替换。 |
 | CHN 权限边界 | runtime bridge 现在额外要求 `chn_vis:use`；即使拥有 `ai_workbench:use`，没有 CHN 权限的用户也不能 query/upload。新增测试覆盖。 |
 | WebSocket live fence | gateway 在升级成功后按 live-check interval 重新验证 Memory Lab lease，失效时销毁浏览器与 runner 两端 socket。 |
+| fork pre-persistence admission | 官方 session-controller fork 在生成 child ID 后、`agents.create()` 前触发 `api-session/fork-admission`；Memory Lab integration 用 parent 的 live lease/context/runtime 预绑定 child，native fork 持久化失败时通过 `api-session/fork-failed` 清理未物化 binding。 |
 
 ## 实现对应关系
 

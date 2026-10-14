@@ -231,6 +231,15 @@ export class IntegrationStore {
     return result.changes
   }
 
+  removeUnmaterializedBinding(sessionId, { contextId, clientId } = {}) {
+    const clauses = ['session_id = ?']
+    const values = [sessionId]
+    if (contextId !== undefined) { clauses.push('context_id = ?'); values.push(contextId) }
+    if (clientId !== undefined) { clauses.push('client_id = ?'); values.push(clientId) }
+    const result = this.db.prepare(`DELETE FROM integration_bindings WHERE ${clauses.join(' AND ')}`).run(...values)
+    return result.changes
+  }
+
   close() { this.db.close() }
 }
 

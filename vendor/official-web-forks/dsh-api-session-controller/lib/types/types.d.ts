@@ -547,6 +547,20 @@ declare module '@deepseek-ai/cordis' {
     interface Events {
         /** Admit a Session creation before any Agent or durable Session is created. */
         'api-session/create-admission'(request: SessionCreateRequest, next: () => Promise<void>): Promise<void>;
+		/** Admit a fork before its child Session is persisted or can receive a prompt. */
+		'api-session/fork-admission'(request: {
+			readonly sourceSessionId: SessionId;
+			readonly childSessionId: SessionId;
+			readonly workspaceId?: WorkspaceId;
+			readonly atSeq: number;
+		}, next: () => Promise<void>): Promise<void>;
+		/** Roll back a pre-bound child when native fork persistence fails. */
+		'api-session/fork-failed'(request: {
+			readonly sourceSessionId: SessionId;
+			readonly childSessionId: SessionId;
+			readonly workspaceId?: WorkspaceId;
+			readonly atSeq: number;
+		}, next: () => Promise<void>): Promise<void>;
         /** Admit a prompt before an Agent is resumed or user content is recorded. */
         'api-session/prompt-admission'(request: SessionPromptRequest, next: () => Promise<void>): Promise<void>;
         /**

@@ -285,6 +285,52 @@ export async function apply(ctx) {
     try { await policy.admitCreate(request) } catch (error) { throw policy.asRemote(error) }
     return next()
   }, { global: true })
+  // The native fork command creates its child inside the session controller,
+  // so a normal create-admission hook cannot protect the gap between child
+  // allocation and the first prompt.  Bind the child before agents.create()
+  // runs, using the live parent lease and the same trusted context.
+  if (integrationConfig !== undefined) {
+    ctx.on('api-session/fork-admission', async (request, next) => {
+      try {
+        const parent = integration?.store.requireActive(request.sourceSessionId)
+        if (parent === undefined) throw new WorkbenchExtensionError('CONTEXT_NOT_BOUND')
+        policy.requireSession(parent.workspaceId, request.sourceSessionId)
+        if (request.workspaceId !== undefined && request.workspaceId !== parent.workspaceId) {
+          throw new WorkbenchExtensionError('SESSION_WORKSPACE_MISMATCH')
+        }
+        const metadata = await verifyContext(
+          integrationConfig,
+          parent.contextId,
+          undefined,
+          runtimeRegistry,
+          parent.accessGrantId,
+        )
+        if (metadata.runtime_id !== undefined && parent.runtimeId !== undefined
+          && metadata.runtime_id !== parent.runtimeId) {
+          throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH')
+        }
+        integration.store.bind({
+          clientId: parent.clientId,
+          contextId: parent.contextId,
+          workspaceId: parent.workspaceId,
+          sessionId: request.childSessionId,
+          instanceId: integrationConfig.instanceId,
+          metadata,
+        })
+      } catch (error) { throw policy.asRemote(error) }
+      return next()
+    }, { global: true })
+    ctx.on('api-session/fork-failed', async (request, next) => {
+      const parent = integration?.store.binding(request.sourceSessionId)
+      if (parent !== undefined) {
+        integration.store.removeUnmaterializedBinding(request.childSessionId, {
+          contextId: parent.contextId,
+          clientId: parent.clientId,
+        })
+      }
+      return next()
+    }, { global: true })
+  }
   ctx.on('api-session/prompt-admission', async (request, next) => {
     try { await policy.admitPrompt(request) } catch (error) { throw policy.asRemote(error) }
     return next()
