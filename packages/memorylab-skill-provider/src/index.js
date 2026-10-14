@@ -1,6 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
 
 const PROVIDER = 'memorylab-remote'
+const RUNTIME_PATH = '/api/skills/runtime/v1'
+
+function runtimeUrl(baseUrl, path) {
+  const origin = baseUrl.replace(/\/$/u, '')
+  const prefix = origin.endsWith(RUNTIME_PATH) ? origin : `${origin}${RUNTIME_PATH}`
+  return `${prefix}${path}`
+}
 
 function abortIfNeeded(signal) {
   if (signal?.aborted) throw signal.reason ?? new DOMException('The operation was aborted', 'AbortError')
@@ -16,7 +23,7 @@ function hash(value) {
 
 async function protocolRequest({ baseUrl, serviceSecret, instanceId, runtimeId, scope, path, body, fetchImpl, signal }) {
   abortIfNeeded(signal)
-  const response = await fetchImpl(`${baseUrl.replace(/\/$/u, '')}${path}`, {
+  const response = await fetchImpl(runtimeUrl(baseUrl, path), {
     method: 'POST',
     headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${serviceSecret}`, 'x-dsh-instance-id': instanceId, 'x-dsh-runtime-id': runtimeId },
     body: JSON.stringify({ protocol_version: '1.0', request_id: randomUUID(), ...scope, ...body }),
@@ -59,7 +66,7 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
   const headers = () => ({ accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${serviceSecret}`, 'x-dsh-instance-id': instanceId, 'x-dsh-runtime-id': runtimeId })
   const request = async (path, body, signal) => {
     abortIfNeeded(signal)
-    const response = await fetchImpl(`${baseUrl.replace(/\/$/u, '')}${path}`, { method: 'POST', headers: headers(), body: JSON.stringify(scopeBody(captured, body)), signal })
+    const response = await fetchImpl(runtimeUrl(baseUrl, path), { method: 'POST', headers: headers(), body: JSON.stringify(scopeBody(captured, body)), signal })
     const payload = await response.json().catch(() => undefined)
     if (!response.ok) { const error = new Error(payload?.detail?.message ?? payload?.error?.message ?? `Memory Lab request failed: ${response.status}`); error.code = payload?.detail?.code ?? payload?.error?.code ?? 'PROVIDER_UNAVAILABLE'; throw error }
     return payload
@@ -94,7 +101,7 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
 
 /** Create the server-side receipt immediately before native prompt admission. */
 export async function admitInvocation({ baseUrl, serviceSecret, instanceId, runtimeId, scope, locator, invocationId, nativeRequestId, fetchImpl = fetch, signal }) {
-  const response = await fetchImpl(`${baseUrl.replace(/\/$/u, '')}/admit`, {
+  const response = await fetchImpl(runtimeUrl(baseUrl, '/admit'), {
     method: 'POST',
     headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${serviceSecret}`, 'x-dsh-instance-id': instanceId, 'x-dsh-runtime-id': runtimeId },
     body: JSON.stringify({ protocol_version: '1.0', request_id: randomUUID(), ...scope, ...locator, invocation_id: invocationId, native_request_id: nativeRequestId }),
@@ -107,7 +114,7 @@ export async function admitInvocation({ baseUrl, serviceSecret, instanceId, runt
 
 /** Record one fact about a receipt after the native host has observed it. */
 export async function recordUsage({ baseUrl, serviceSecret, instanceId, runtimeId, scope, locator, invocationId, nativeRequestId, phase, eventId = randomUUID(), occurredAt = new Date().toISOString(), errorCode, fetchImpl = fetch, signal }) {
-  const response = await fetchImpl(`${baseUrl.replace(/\/$/u, '')}/usage`, {
+  const response = await fetchImpl(runtimeUrl(baseUrl, '/usage'), {
     method: 'POST',
     headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${serviceSecret}`, 'x-dsh-instance-id': instanceId, 'x-dsh-runtime-id': runtimeId },
     body: JSON.stringify({ protocol_version: '1.0', request_id: randomUUID(), ...scope, ...locator, event_id: eventId, invocation_id: invocationId, native_request_id: nativeRequestId, phase, occurred_at: occurredAt, ...(errorCode === undefined ? {} : { error_code: errorCode }) }),

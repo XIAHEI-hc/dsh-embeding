@@ -40,7 +40,11 @@ test('synchronizer acknowledges only a self-checked fixed version', async () => 
   }
   const result = await synchronizeRemoteProvider({ baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope, fetchImpl })
   assert.equal(result.revision, 'rev-1')
-  assert.deepEqual(calls.map(call => call.url), ['http://memorylab/catalog', 'http://memorylab/resolve', 'http://memorylab/ack'])
+  assert.deepEqual(calls.map(call => call.url), [
+    'http://memorylab/api/skills/runtime/v1/catalog',
+    'http://memorylab/api/skills/runtime/v1/resolve',
+    'http://memorylab/api/skills/runtime/v1/ack',
+  ])
   assert.equal(calls[2].body.status, 'installed')
   assert.equal(calls[2].body.generation, 3)
 })
