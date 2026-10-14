@@ -9,7 +9,7 @@
 
 | 范围 | 证据 |
 |---|---|
-| DSH 扩展回归 | `npm run test:extensions`：43/43 通过；包含 live Memory Lab lease verify、延迟 provider 注册、fork rollback、重启后 active binding 扫描和 usage outbox 重启恢复/稳定 event id 去重。 |
+| DSH 扩展回归 | `npm run test:extensions`：44/44 通过；包含 live Memory Lab lease verify、延迟 provider 注册、fork rollback、重启后 active binding 扫描和 usage outbox 重启恢复/稳定 event id 去重。 |
 | Memory Lab 后端回归 | `PYTHONPATH=backend; python -m pytest -q backend/tests`：66/66 通过；覆盖 context/login revoke 后 terminal usage 以及同 `event_id` 的完整业务 payload replay 冲突；Windows 退出清理阶段的 SQLite `WinError 32` 不影响 pytest 返回码 0。 |
 | Memory Lab 前端 | `npm run typecheck`、`npm run build` 均通过（既有验收记录）。 |
 | 协议契约 | DevPack `python acceptance/check_contracts.py`：6 个合法示例通过，2 个伪造 scope 被拒绝。脚本已显式使用 UTF-8，避免 Windows GBK 环境误报。 |
@@ -41,6 +41,7 @@
 | runner workspace seed | runner 空数据卷首次启动从只读 `/seed` 初始化 `/data/workdir`；已有用户文件时不覆盖。`tests/test_runtime_roles.py` 5/5 通过，并在 A/B 容器实际看到 `seed_runtime_probe.py` 与 `bf-screenshots/*`。 |
 | fork pre-persistence admission | 官方 session-controller fork 在生成 child ID 后、`agents.create()` 前触发 `api-session/fork-admission`；DSH 先调用 Memory Lab 的 service-auth runtime association endpoint，以 parent 的 live lease/context/runtime 预绑定 child，再写本地 binding；native fork 持久化失败时通过 `api-session/fork-failed` 在两端精确清理未物化 binding。 |
 | 后台 runtime synchronizer | DSH extension 启动时立即扫描持久化的 active binding，并每 30 秒重试 `catalog → resolve → ack`；按 session 去重、dispose 时取消请求。A/B runner 镜像已在真实 private compose 中重建并重启，启动日志无 activation error。首次暴露出的 `/catalog` 路径和 demo package path 问题已修复；真实请求随后完成 `catalog → resolve → ack`，两个启用版本均变为 `installed`。 |
+| agent Skill 注入边界 | 现场会话创建曾因在 agent 子上下文直接读取未注入的 `agent.ctx.skills` 而失败；现改为 `agent.ctx.inject(['skills'], ...)` 后再注册 per-session provider，并已重建 A/B runner。新标签页可看到官方工作区会话树和已启用输入框，runner 日志不再出现 `cannot get property "skills" without inject`。 |
 
 ## 实现对应关系
 
@@ -57,7 +58,7 @@
 
 - ISO-09 至 ISO-12 的完整 create/fork、浏览器切换、旧 cookie 和生命周期矩阵。
 - ISO-13 WS 已连接时撤销/禁用的浏览器实测。
-- 浏览器现场尝试：修复网关 WebSocket 握手头并重建到 `localhost:8875` 后，Codex IAB 已真实加载官方 DSH iframe，显示 `Private Memory Lab` 工作区和官方预览弹窗；仍未完成“继续”后的 native `initialized` 消息、官方 `/` 技能菜单、真实模型发送和 CHN 工具调用，因此不计入完整浏览器 PASS。此前的 `WORKSPACE_NOT_FOUND` 由非法 WebSocket 握手触发，不能作为当前工作区不存在的结论。
+- 浏览器现场尝试：修复网关 WebSocket 握手头并注入 agent `skills` 后，Codex IAB 新标签页已真实加载官方 DSH iframe，显示 `Private Memory Lab` 工作区会话树和可用输入框；Codex IAB 当前仍无法可靠点击跨 iframe 的“继续”按钮或向 iframe 编辑器发送文本，因此尚未取得可复核的 native `initialized` 事件、官方 `/` 技能菜单、真实模型发送和 CHN 工具调用，不计入完整浏览器 PASS。此前的 `WORKSPACE_NOT_FOUND` 和 `skills without inject` 均已定位并修复，不能把当前 UI 可见性当成完整验收。
 - SKL-05 真实模型收到指定 hash instruction 并完成 CHN 工具调用；当前已验证 receipt/usage 链路，未声称模型质量通过。
 - SKL-09 至 SKL-17 的现场切版、断连缓存、排队停用、terminal usage 和多 `/ml-*` 提交矩阵。
 - REC-01 gateway/runner 重启恢复、REG-01 独立 DSH 回归、PRO-03 单边升级/停机、OPS-01 回滚覆盖。
