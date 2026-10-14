@@ -10,7 +10,7 @@
 | 范围 | 证据 |
 |---|---|
 | DSH 扩展回归 | `npm run test:extensions`：42/42 通过；包含 live Memory Lab lease verify、延迟 provider 注册、fork rollback 和重启后 active binding 扫描。 |
-| Memory Lab 后端回归 | `PYTHONPATH=backend; python -m pytest -q backend/tests`：62/62 通过；Windows 退出清理阶段的 SQLite `WinError 32` 不影响 pytest 返回码 0。 |
+| Memory Lab 后端回归 | `PYTHONPATH=backend; python -m pytest -q backend/tests`：63/63 通过；Windows 退出清理阶段的 SQLite `WinError 32` 不影响 pytest 返回码 0。 |
 | Memory Lab 前端 | `npm run typecheck`、`npm run build` 均通过（既有验收记录）。 |
 | 协议契约 | DevPack `python acceptance/check_contracts.py`：6 个合法示例通过，2 个伪造 scope 被拒绝。脚本已显式使用 UTF-8，避免 Windows GBK 环境误报。 |
 | 双 runtime 部署 | `docker ps` 显示 `dsh-user-a`、`dsh-user-b`、`dsh-gateway`、`private_mem_lab-backend` 正常运行；runtime registry 将 `runner-a`、`runner-b` 指向不同 subject、origin 和私有数据目录。 |
