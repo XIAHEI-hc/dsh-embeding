@@ -39,6 +39,9 @@ test('gateway binds only a registry-owned subject and issues HttpOnly scope cook
   assert.equal(denied.status, 409)
   const bound = await fetch(`${base}/internal/scope/bind`, { method: 'POST', headers: { authorization: 'Bearer service-secret', 'content-type': 'application/json' }, body: JSON.stringify({ subject: 'user-a', runtime_id: 'runner-a', context_id: 'ctx-a', session_id: 'session-a', access_grant_id: 'grant-a' }) })
   assert.equal(bound.status, 200)
-  assert.match(bound.headers.get('set-cookie'), /HttpOnly/)
+  const scopeTicket = (await bound.json()).scope_ticket
+  const redeemed = await fetch(`${base}/scope/redeem?ticket=${encodeURIComponent(scopeTicket)}`, { redirect: 'manual' })
+  assert.equal(redeemed.status, 303)
+  assert.match(redeemed.headers.get('set-cookie'), /HttpOnly/)
   gateway.server.close()
 })
