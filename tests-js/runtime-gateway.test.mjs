@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { createRuntimeGateway } from '@dsh-workbench/runtime-gateway'
 import http from 'node:http'
 import { createHmac } from 'node:crypto'
+import WebSocket, { WebSocketServer } from 'ws'
 
 test('scope token is opaque, signed, and expires', () => {
   const issuedAt = 1_000_000
@@ -88,6 +89,41 @@ test('gateway performs a live Memory Lab lease check before forwarding native re
   const revoked = await fetch(`${base}/api/native`, { headers: { cookie } })
   assert.equal(revoked.status, 403)
   gateway.server.close(); upstream.close()
+  if (previous === undefined) delete process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN
+  else process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN = previous
+})
+
+test('gateway preserves the Connection: Upgrade header for native WebSocket clients', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-gateway-ws-'))
+  const upstream = http.createServer()
+  const upstreamWs = new WebSocketServer({ server: upstream })
+  upstreamWs.on('connection', socket => socket.send('runner-ws-ok'))
+  await new Promise(resolve => upstream.listen(0, '127.0.0.1', resolve))
+  const upstreamAddress = upstream.address()
+  const registryPath = join(root, 'registry.json')
+  const runtimeSecretPath = join(root, 'runner-secret')
+  writeFileSync(runtimeSecretPath, 'runner-secret')
+  writeFileSync(registryPath, JSON.stringify({ schema_version: '1.0', host_instance_id: 'instance-a', runtimes: [
+    { subject: 'user-a', runtime_id: 'runner-a', internal_origin: `http://127.0.0.1:${upstreamAddress.port}`, control_secret_file: runtimeSecretPath, status: 'ready' },
+  ] }))
+  const previous = process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN
+  delete process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN
+  const gateway = createRuntimeGateway({ registryPath, scopeSecret: 'scope-secret', serviceSecret: 'service-secret' })
+  await new Promise(resolve => gateway.server.listen(0, '127.0.0.1', resolve))
+  const address = gateway.server.address()
+  const base = `http://127.0.0.1:${address.port}`
+  const bound = await fetch(`${base}/internal/scope/bind`, { method: 'POST', headers: { authorization: 'Bearer service-secret', 'content-type': 'application/json' }, body: JSON.stringify({ subject: 'user-a', runtime_id: 'runner-a', context_id: 'ctx-a', session_id: 'session-a', access_grant_id: 'grant-a' }) })
+  const ticket = (await bound.json()).scope_ticket
+  const redeemed = await fetch(`${base}/scope/redeem?ticket=${encodeURIComponent(ticket)}`, { redirect: 'manual' })
+  const cookie = redeemed.headers.get('set-cookie').split(';', 1)[0]
+  const message = await new Promise((resolve, reject) => {
+    const socket = new WebSocket(`ws://127.0.0.1:${address.port}/api/remote.mux`, { headers: { cookie }, origin: 'http://127.0.0.1' })
+    const timer = setTimeout(() => { socket.terminate(); reject(new Error('websocket handshake timed out')) }, 3000)
+    socket.once('message', value => { clearTimeout(timer); resolve(value.toString()); socket.close() })
+    socket.once('error', error => { clearTimeout(timer); reject(error) })
+  })
+  assert.equal(message, 'runner-ws-ok')
+  gateway.server.close(); upstreamWs.close(); upstream.close()
   if (previous === undefined) delete process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN
   else process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN = previous
 })
