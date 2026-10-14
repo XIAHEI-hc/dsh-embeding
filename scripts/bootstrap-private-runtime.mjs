@@ -9,7 +9,8 @@ const userB = process.env.MEMORYLAB_USER_B_ID ?? '00000000-0000-4000-8000-000000
 const apiOrigin = process.env.MEMORYLAB_API_ORIGIN ?? 'http://memorylab-api:9000'
 // The browser-facing portal and gateway must be same-site.  Production should
 // pass the public portal origin explicitly (usually the shared HTTPS origin).
-const parentOrigin = process.env.MEMORYLAB_PARENT_ORIGIN ?? 'http://dsh-gateway:8765'
+const parentOrigin = process.env.MEMORYLAB_PARENT_ORIGIN ?? 'http://localhost:7891'
+const publicOrigin = process.env.MEMORYLAB_DSH_PUBLIC_ORIGIN ?? 'http://localhost:8875'
 
 function secret() { return randomBytes(32).toString('base64url') }
 async function put(path, value, mode = 0o600) {
@@ -27,7 +28,7 @@ function workspaceConfig() {
 function embedConfig() {
   return JSON.stringify({
     schema_version: 1,
-    public_origin: 'http://dsh-gateway:8765',
+    public_origin: publicOrigin,
     allowed_parent_origins: [parentOrigin],
     deployment_mode: 'private_runner',
     clients: [{ client_id: 'gateway', secret_file: '/private/runner-client-secret', allowed_parent_origins: [parentOrigin], workspace_aliases: ['private-memory-lab'], mode: 'read_write' }],
@@ -71,7 +72,7 @@ for (const [name, runtime] of [['runner-a', 'runner-a'], ['runner-b', 'runner-b'
     `MEMORYLAB_AI_PUBLIC_ORIGIN=${apiOrigin}`,
     `MEMORYLAB_AI_DSH_INSTANCE_ID=${registry.host_instance_id}`,
     `MEMORYLAB_AI_RUNTIME_SECRET_FILE=/private/runner-client-secret`,
-    'WORKBENCH_PUBLIC_URL=http://dsh-gateway:8765',
+    `WORKBENCH_PUBLIC_URL=${publicOrigin}`,
     'WORKBENCH_DATA_DIR=/data',
     'DSH_HOME=/data/dsh-home',
     'WORKBENCH_WEB_WORKSPACE=/data/workdir',

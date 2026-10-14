@@ -55,6 +55,13 @@ async function verifyContext(config, contextId, signal, runtimeRegistry, accessG
       const runtime = runtimeForSubject(runtimeRegistry, scopeIdentity)
       return { ...body.context, runtime_id: runtime.runtimeId, runtime_origin: runtime.internalOrigin }
     }
+    // A private runner has a single runtime identity. The upstream verify
+    // request was already authenticated with that runtime id above, so carry
+    // the identity into the binding metadata even though there is no
+    // multi-user registry loaded inside the runner process.
+    if (config.runtimeId !== undefined) {
+      return { ...body.context, runtime_id: config.runtimeId }
+    }
     return body.context
   } catch (error) {
     if (error instanceof WorkbenchExtensionError) throw error

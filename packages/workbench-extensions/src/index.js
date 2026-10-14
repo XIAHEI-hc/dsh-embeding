@@ -59,16 +59,13 @@ function providerScope(integration, sessionId) {
   return { binding, scope: { context_id: binding.contextId, session_id: binding.sessionId, access_grant_id: binding.accessGrantId } }
 }
 
-async function admitRemotePrompt(integration, config, request, admittedPrompts) {
+async function admitRemotePrompt(integration, config, request, admittedPrompts, getProvider) {
   const names = remoteSkillNames(request.content)
   if (names.length === 0) return
   if (names.length > 1) throw new WorkbenchExtensionError('SKILL_MULTIPLE')
   const { binding, scope } = providerScope(integration, request.sessionId)
   const controller = new AbortController()
-  const provider = createRemoteProvider({
-    baseUrl: config.apiOrigin, serviceSecret: config.toolSecret, instanceId: config.instanceId,
-    runtimeId: binding.runtimeId, scope, control: { signal: controller.signal, invalidate() {} },
-  })
+  const provider = getProvider(request.sessionId, controller.signal)
   try {
     const candidate = (await provider.list({ signal: controller.signal })).find(item => item.name === names[0])
     if (candidate === undefined) throw new WorkbenchExtensionError('SKILL_NOT_ENABLED')
@@ -312,24 +309,39 @@ export async function apply(ctx) {
   const agentProviders = new WeakMap()
   const agentInvocations = new WeakMap()
   const admittedPrompts = new Map()
+  const sessionProviders = new Map()
+  const ensureRemoteProvider = (agent, signal) => {
+    const sessionId = agent.session.id
+    const existing = sessionProviders.get(sessionId)
+    if (existing !== undefined) {
+      agentProviders.set(agent, existing)
+      return existing
+    }
+    const { binding, scope } = providerScope(integration, sessionId)
+    const provider = createRemoteProvider({
+      baseUrl: integrationConfig.apiOrigin,
+      serviceSecret: integrationConfig.toolSecret,
+      instanceId: integrationConfig.instanceId,
+      runtimeId: binding.runtimeId,
+      scope,
+      control: { signal, invalidate() {} },
+    })
+    const installed = { provider, binding, scope }
+    sessionProviders.set(sessionId, installed)
+    agentProviders.set(agent, installed)
+    return installed
+  }
   const agentSyncTimers = new WeakMap()
   const agentSyncControllers = new WeakMap()
   if (integration !== undefined && integrationConfig.integrationKind === 'memorylab') {
     ctx.on('agent/created', async ({ agent, signal }) => {
-      const { binding, scope } = providerScope(integration, agent.session.id)
-      let provider
-      agent.ctx.skills.registerProvider(control => {
-        provider = createRemoteProvider({
-        baseUrl: integrationConfig.apiOrigin,
-        serviceSecret: integrationConfig.toolSecret,
-        instanceId: integrationConfig.instanceId,
-        runtimeId: binding.runtimeId,
-        scope,
-        control,
-        })
-        agentProviders.set(agent, { provider, binding, scope })
-        return provider
-      })
+      let installed
+      try { installed = ensureRemoteProvider(agent, signal) } catch (error) {
+        if (error?.code === 'CONTEXT_NOT_BOUND') return
+        throw error
+      }
+      agent.ctx.skills.registerProvider(() => installed.provider)
+      const { binding, scope } = installed
       try {
         await synchronizeRemoteProvider({
           baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
@@ -361,10 +373,24 @@ export async function apply(ctx) {
       agentProviders.delete(agent)
       agentInvocations.delete(agent)
       admittedPrompts.delete(agent.session.id)
+      sessionProviders.delete(agent.session.id)
     }, { global: true })
+    const providerForSession = (sessionId, signal) => {
+      const existing = sessionProviders.get(sessionId)
+      if (existing !== undefined) return existing.provider
+      const binding = integration.store.requireActive(sessionId)
+      const scope = { context_id: binding.contextId, session_id: binding.sessionId, access_grant_id: binding.accessGrantId }
+      const provider = createRemoteProvider({
+        baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
+        instanceId: integrationConfig.instanceId, runtimeId: binding.runtimeId,
+        scope, control: { signal, invalidate() {} },
+      })
+      sessionProviders.set(sessionId, { provider, binding, scope })
+      return provider
+    }
     ctx.on('api-session/prompt-admission', async (request, next) => {
       try {
-        await admitRemotePrompt(integration, integrationConfig, request, admittedPrompts)
+        await admitRemotePrompt(integration, integrationConfig, request, admittedPrompts, providerForSession)
         return next()
       } catch (error) { throw policy.asRemote(error) }
     }, { global: true })
@@ -373,8 +399,7 @@ export async function apply(ctx) {
         const names = remoteSkillNames(payload.messages.flatMap(message => message.content ?? []))
         if (names.length > 1) throw new WorkbenchExtensionError('SKILL_MULTIPLE')
         if (names.length === 1) {
-          const installed = agentProviders.get(payload.agent)
-          if (installed === undefined) throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+          const installed = agentProviders.get(payload.agent) ?? ensureRemoteProvider(payload.agent, payload.signal)
           const candidate = (await installed.provider.list({ signal: payload.signal })).find(item => item.name === names[0])
           if (candidate === undefined) throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
           const queue = admittedPrompts.get(payload.agent.session.id) ?? []
