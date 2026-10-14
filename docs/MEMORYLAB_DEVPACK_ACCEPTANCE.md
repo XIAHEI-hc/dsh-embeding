@@ -15,6 +15,7 @@
 | 协议契约 | DevPack `python acceptance/check_contracts.py`：6 个合法示例通过，2 个伪造 scope 被拒绝。脚本已显式使用 UTF-8，避免 Windows GBK 环境误报。 |
 | 双 runtime 部署 | `docker ps` 显示 `dsh-user-a`、`dsh-user-b`、`dsh-gateway`、`private_mem_lab-backend` 正常运行；runtime registry 将 `runner-a`、`runner-b` 指向不同 subject、origin 和私有数据目录。 |
 | 真实 runtime 链路 | A runtime 已现场完成 `/catalog`、`/resolve`、`/ack`、`/admit`、`usage loaded`、`usage completed`；数据库 receipt 为 `completed`，usage 有 `loaded` 与 `completed`。 |
+| 当前 overlay bootstrap | 使用主 compose 加 `deploy/compose.dsh-private.yaml` 重建 backend 后，真实 mock 用户 bootstrap 返回 `dsh_origin=http://localhost:8875`、既有 context/session、access grant 和 scope ticket；容器环境包含 `AI_TOOL_RUNTIME_SECRETS_JSON`、`AI_TOOL_RUNTIME_SUBJECTS_JSON` 及 `AI_DSH_CONTROL_ORIGIN=http://dsh-gateway:8765`。 |
 | 跨 runtime 拒绝 | B 使用 A 的 context/session/grant 重放 catalog、resolve、admit、usage、ack 均得到 `403 SCOPE_DENIED`。 |
 | live revoke | logout 前旧 scope cookie 访问带 channel 的 embed 为 200；logout 后同一 cookie 为 403。无 scope cookie 的 embed/API 请求为 401。 |
 | 同浏览器换用户 | Memory Lab logout 清除 `dsh.embed.pending.v1` sessionStorage；下一用户不会继承上一用户的 iframe handoff，HttpOnly scope cookie 由新 bootstrap 替换。 |
