@@ -21,5 +21,7 @@ The gateway must also receive `MEMORYLAB_RUNTIME_VERIFY_ORIGIN`, pointing to the
 private backend service (for example `http://memorylab-api:9000`). It uses the
 runtime credential and exact `context_id/session_id/access_grant_id` from the
 scope cookie to perform a live session-lease check before forwarding every
-native HTTP or WebSocket request. If the backend is unavailable or the grant is
-revoked, the gateway fails closed.
+native HTTP or WebSocket request. After a WebSocket handshake it repeats that
+check at `MEMORYLAB_RUNTIME_LIVE_CHECK_INTERVAL_MS` (default 5000 ms), and
+closes both sides when the lease is no longer valid. If the backend is
+unavailable or the grant is revoked, the gateway fails closed.
