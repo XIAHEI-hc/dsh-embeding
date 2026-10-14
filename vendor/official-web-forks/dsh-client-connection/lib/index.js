@@ -1,6 +1,7 @@
 import z from "@deepseek-ai/schemastery";
 import { Readable } from "node:stream";
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { credentialKey } from "@deepseek-ai/dsh-credentials";
 import { Service } from "@deepseek-ai/cordis";
 import { z as z$1 } from "zod";
@@ -253,6 +254,31 @@ function header(headers, name) {
 	const value = headers[name];
 	return typeof value === "string" ? value : void 0;
 }
+
+// A private runner is reached through the scoped runtime gateway. The gateway
+// deliberately strips the browser's opaque scope cookie before forwarding, so
+// the runner accepts a short, HMAC-bound assertion made with its own runtime
+// credential. This path is never enabled for standalone/gateway processes.
+function scopedAdmission(request) {
+	if ((process.env.WORKBENCH_ROLE ?? "").trim().toLowerCase() !== "runner") return false;
+	const runtimeId = process.env.DSH_RUNTIME_ID;
+	const proof = header(request.headers, "x-dsh-scope-proof");
+	const subject = header(request.headers, "x-dsh-scope-subject");
+	const forwardedRuntime = header(request.headers, "x-dsh-runtime-id");
+	if (!runtimeId || !proof || !subject || forwardedRuntime !== runtimeId) return false;
+	const contextId = header(request.headers, "x-dsh-scope-context-id") ?? null;
+	const sessionId = header(request.headers, "x-dsh-scope-session-id") ?? null;
+	const grantId = header(request.headers, "x-dsh-access-grant-id") ?? null;
+	const secretFile = process.env.MEMORYLAB_AI_RUNTIME_SECRET_FILE ?? process.env.WORKBENCH_RUNNER_CREDENTIAL_FILE;
+	if (!secretFile) return false;
+	let secret;
+	try { secret = readFileSync(secretFile, "utf8").trim(); } catch { return false; }
+	if (!secret) return false;
+	const body = JSON.stringify({ subject, runtime_id: runtimeId, context_id: contextId, session_id: sessionId, access_grant_id: grantId });
+	const expected = createHmac("sha256", secret).update(body).digest();
+	const actual = decodeBase64Url(proof);
+	return actual !== void 0 && actual.byteLength === expected.byteLength && timingSafeEqual(actual, expected);
+}
 /** Canonical request authority used as the cookie name and signed audience. */
 function requestAuthority(headers) {
 	const host = header(headers, "host");
@@ -447,6 +473,7 @@ var BrowserAuth = class BrowserAuth {
 	* @returns true only for an unexpired cookie signed by this activation's loaded secret.
 	*/
 	isAuthenticated(request) {
+		if (scopedAdmission(request)) return true;
 		const authority = requestAuthority(request.headers);
 		const rawCookie = header(request.headers, "cookie");
 		if (authority === void 0 || rawCookie === void 0) return false;

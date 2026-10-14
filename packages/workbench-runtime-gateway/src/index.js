@@ -52,6 +52,17 @@ function runtimeControlSecret(runtime) {
   try { return readFileSync(runtime.controlSecretFile, 'utf8').trim() } catch { return undefined }
 }
 
+function scopeProof(scope, runtime) {
+  const secret = runtimeControlSecret(runtime)
+  if (!secret) return undefined
+  const body = JSON.stringify({
+    subject: scope.subject, runtime_id: runtime.runtimeId,
+    context_id: scope.context_id ?? null, session_id: scope.session_id ?? null,
+    access_grant_id: scope.access_grant_id ?? null,
+  })
+  return createHmac('sha256', secret).update(body).digest('base64url')
+}
+
 async function verifyLiveScope(scope, runtime, verifyOrigin, hostInstanceId, timeoutMs = 5000, fetchImpl = fetch) {
   if (!verifyOrigin) return { ok: true }
   const secret = runtimeControlSecret(runtime)
@@ -158,6 +169,7 @@ export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret,
 
 function proxyHeaders(req, scope, runtime) {
   const { cookie: _cookie, ...incoming } = req.headers
+  const proof = scopeProof(scope, runtime)
   return {
     ...incoming,
     host: new URL(runtime.internalOrigin).host,
@@ -166,6 +178,7 @@ function proxyHeaders(req, scope, runtime) {
     ...(scope.context_id === undefined ? {} : { 'x-dsh-scope-context-id': scope.context_id }),
     ...(scope.session_id === undefined ? {} : { 'x-dsh-scope-session-id': scope.session_id }),
     ...(scope.access_grant_id === undefined ? {} : { 'x-dsh-access-grant-id': scope.access_grant_id }),
+    ...(proof === undefined ? {} : { 'x-dsh-scope-proof': proof }),
   }
 }
 
