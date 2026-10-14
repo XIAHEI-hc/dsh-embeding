@@ -14,6 +14,41 @@ function hash(value) {
   return createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex')
 }
 
+async function protocolRequest({ baseUrl, serviceSecret, instanceId, runtimeId, scope, path, body, fetchImpl, signal }) {
+  abortIfNeeded(signal)
+  const response = await fetchImpl(`${baseUrl.replace(/\/$/u, '')}${path}`, {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${serviceSecret}`, 'x-dsh-instance-id': instanceId, 'x-dsh-runtime-id': runtimeId },
+    body: JSON.stringify({ protocol_version: '1.0', request_id: randomUUID(), ...scope, ...body }),
+    signal,
+  })
+  const payload = await response.json().catch(() => undefined)
+  if (!response.ok) { const error = new Error(payload?.error?.message ?? payload?.detail?.message ?? `Memory Lab request failed: ${response.status}`); error.code = payload?.error?.code ?? payload?.detail?.code ?? 'PROVIDER_UNAVAILABLE'; throw error }
+  return payload
+}
+
+/** Pull, validate, self-check and acknowledge one exact runtime catalog. */
+export async function synchronizeRemoteProvider({ baseUrl, serviceSecret, instanceId, runtimeId, scope, fetchImpl = fetch, signal }) {
+  const catalog = await protocolRequest({ baseUrl, serviceSecret, instanceId, runtimeId, scope, path: '/catalog', body: undefined, fetchImpl, signal })
+  const installed = []
+  for (const row of catalog.items ?? []) {
+    const locator = { activation_id: row.activation_id, version_id: row.version_id, generation: row.generation, archive_sha256: row.archive_sha256 }
+    const status = row.desired_enabled ? 'installed' : 'removed'
+    if (row.desired_enabled) {
+      const resolved = await protocolRequest({ baseUrl, serviceSecret, instanceId, runtimeId, scope, path: '/resolve', body: locator, fetchImpl, signal })
+      if (resolved.archive_sha256 !== row.archive_sha256 || typeof resolved.instruction !== 'string' || typeof resolved.instruction_sha256 !== 'string') {
+        const error = new Error('resolved skill hash mismatch'); error.code = 'HASH_MISMATCH'; throw error
+      }
+      installed.push({ ...row, locator })
+    }
+    await protocolRequest({
+      baseUrl, serviceSecret, instanceId, runtimeId, scope, path: '/ack',
+      body: { ...locator, ack_id: randomUUID(), status, provider_revision: catalog.catalog_revision }, fetchImpl, signal,
+    })
+  }
+  return { revision: catalog.catalog_revision, installed }
+}
+
 /**
  * A single-session, server-bound provider. The scope is supplied by the trusted
  * host integration; cwd is deliberately ignored as an identity signal.

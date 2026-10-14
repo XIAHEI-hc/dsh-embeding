@@ -13,7 +13,7 @@ import { registerIntegrationRoutes } from './integration.js'
 import { loadRuntimeRegistry } from './runtime-registry.js'
 import { WorkspacePolicy } from './workspaces.js'
 import { createRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
-import { admitInvocation, recordUsage } from '@dsh-workbench/memorylab-skill-provider'
+import { admitInvocation, recordUsage, synchronizeRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
 
 export const name = 'workbench-extensions'
 export const inject = ['connection', 'sessionController', 'webServer', 'workspaceRegistry', 'skills']
@@ -307,11 +307,14 @@ export async function apply(ctx) {
     ? undefined
     : registerIntegrationRoutes(ctx, integrationConfig, policy, req => findClient(embedConfig, req), runtimeRegistry)
   const agentProviders = new WeakMap()
+  const agentSyncTimers = new WeakMap()
+  const agentSyncControllers = new WeakMap()
   if (integration !== undefined && integrationConfig.integrationKind === 'memorylab') {
-    ctx.on('agent/created', ({ agent }) => {
+    ctx.on('agent/created', async ({ agent, signal }) => {
       const { binding, scope } = providerScope(integration, agent.session.id)
+      let provider
       agent.ctx.skills.registerProvider(control => {
-        const provider = createRemoteProvider({
+        provider = createRemoteProvider({
         baseUrl: integrationConfig.apiOrigin,
         serviceSecret: integrationConfig.toolSecret,
         instanceId: integrationConfig.instanceId,
@@ -322,8 +325,36 @@ export async function apply(ctx) {
         agentProviders.set(agent, { provider, binding, scope })
         return provider
       })
+      try {
+        await synchronizeRemoteProvider({
+          baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
+          instanceId: integrationConfig.instanceId, runtimeId: binding.runtimeId, scope,
+          signal,
+        })
+      } catch {
+        // A disconnected broker leaves the activation pending; ordinary DSH
+        // prompts remain usable and the 30s synchronizer retries.
+      }
+      const syncController = new AbortController()
+      agentSyncControllers.set(agent, syncController)
+      const timer = setInterval(() => {
+        synchronizeRemoteProvider({
+          baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
+          instanceId: integrationConfig.instanceId, runtimeId: binding.runtimeId, scope,
+          signal: syncController.signal,
+        }).catch(() => {})
+      }, 30_000)
+      timer.unref?.()
+      agentSyncTimers.set(agent, timer)
     }, { global: true })
-    ctx.on('agent/disposed', ({ agent }) => { agentProviders.delete(agent) }, { global: true })
+    ctx.on('agent/disposed', ({ agent }) => {
+      const timer = agentSyncTimers.get(agent)
+      if (timer !== undefined) clearInterval(timer)
+      agentSyncControllers.get(agent)?.abort()
+      agentSyncTimers.delete(agent)
+      agentSyncControllers.delete(agent)
+      agentProviders.delete(agent)
+    }, { global: true })
     ctx.on('api-session/prompt-admission', async (request, next) => {
       try {
         await admitRemotePrompt(integration, integrationConfig, request)

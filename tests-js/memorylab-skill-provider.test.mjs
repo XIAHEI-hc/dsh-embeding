@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
+import { createRemoteProvider, synchronizeRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
 
 const scope = { context_id: 'ctx-a', session_id: 'session-a', access_grant_id: 'grant-a' }
 
@@ -26,4 +26,21 @@ test('provider only exposes installed fixed versions and resolves through broker
 test('provider rejects candidates from another scope', async () => {
   const provider = createRemoteProvider({ baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope, fetchImpl: async () => ({ ok: true, json: async () => ({}) }) })
   await assert.rejects(provider.get({ provider: 'memorylab-remote', locator: { owner: 'ctx-b' } }), { code: 'SCOPE_DENIED' })
+})
+
+test('synchronizer acknowledges only a self-checked fixed version', async () => {
+  const calls = []
+  const fetchImpl = async (url, options) => {
+    const body = JSON.parse(options.body); calls.push({ url, body })
+    return { ok: true, json: async () => url.endsWith('/catalog')
+      ? { catalog_revision: 'rev-1', items: [{ desired_enabled: true, activation_id: 'a', version_id: 'v', generation: 3, archive_sha256: 'a'.repeat(64) }] }
+      : url.endsWith('/resolve')
+        ? { archive_sha256: 'a'.repeat(64), instruction: 'Use facts.', instruction_sha256: 'c'.repeat(64) }
+        : { accepted: true, duplicate: false } }
+  }
+  const result = await synchronizeRemoteProvider({ baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope, fetchImpl })
+  assert.equal(result.revision, 'rev-1')
+  assert.deepEqual(calls.map(call => call.url), ['http://memorylab/catalog', 'http://memorylab/resolve', 'http://memorylab/ack'])
+  assert.equal(calls[2].body.status, 'installed')
+  assert.equal(calls[2].body.generation, 3)
 })
