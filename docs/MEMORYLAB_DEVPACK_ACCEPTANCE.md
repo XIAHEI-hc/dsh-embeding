@@ -9,13 +9,14 @@
 
 | 范围 | 证据 |
 |---|---|
-| DSH 扩展回归 | `npm run test:extensions`：40/40 通过；包含 live Memory Lab lease verify 和延迟 provider 注册。 |
-| Memory Lab 后端回归 | `PYTHONPATH=backend; python -m pytest -q backend/tests`：57/57 通过；Windows 退出清理阶段的 SQLite `WinError 32` 不影响 pytest 返回码 0。 |
+| DSH 扩展回归 | `npm run test:extensions`：41/41 通过；包含 live Memory Lab lease verify、延迟 provider 注册和 fork rollback。 |
+| Memory Lab 后端回归 | `PYTHONPATH=backend; python -m pytest -q backend/tests`：60/60 通过；Windows 退出清理阶段的 SQLite `WinError 32` 不影响 pytest 返回码 0。 |
 | Memory Lab 前端 | `npm run typecheck`、`npm run build` 均通过（既有验收记录）。 |
 | 协议契约 | DevPack `python acceptance/check_contracts.py`：6 个合法示例通过，2 个伪造 scope 被拒绝。脚本已显式使用 UTF-8，避免 Windows GBK 环境误报。 |
 | 双 runtime 部署 | `docker ps` 显示 `dsh-user-a`、`dsh-user-b`、`dsh-gateway`、`private_mem_lab-backend` 正常运行；runtime registry 将 `runner-a`、`runner-b` 指向不同 subject、origin 和私有数据目录。 |
 | 真实 runtime 链路 | A runtime 已现场完成 `/catalog`、`/resolve`、`/ack`、`/admit`、`usage loaded`、`usage completed`；数据库 receipt 为 `completed`，usage 有 `loaded` 与 `completed`。 |
 | 当前 overlay bootstrap | 使用主 compose 加 `deploy/compose.dsh-private.yaml` 重建 backend 后，真实 mock 用户 bootstrap 返回 `dsh_origin=http://localhost:8875`、既有 context/session、access grant 和 scope ticket；容器环境包含 `AI_TOOL_RUNTIME_SECRETS_JSON`、`AI_TOOL_RUNTIME_SUBJECTS_JSON` 及 `AI_DSH_CONTROL_ORIGIN=http://dsh-gateway:8765`。 |
+| runner scope admission | gateway 转发时剥离浏览器 scope cookie，注入 runner credential HMAC proof；官方 Connection fork 仅在 runner role、精确 runtime ID 和 proof 全部匹配时接受 native `/`、RPC、WS 请求。 |
 | private compose 可复现 | 修正 `examples/deploy/compose.private-runners.yaml` 的 compose-relative env、secret、volume 和 build context 路径；从仓库根目录直接 `docker compose -f examples/deploy/compose.private-runners.yaml config --quiet` 通过。 |
 | stale heartbeat fence | runtime `/catalog` 将超过 60 秒未 heartbeat 的历史 `installed` ACK 转为 `unreachable`，native provider 不再暴露陈旧技能；新增测试覆盖。 |
 | queued skill terminal fact | queued `/ml-*` 在切版、停用、revoke 或正文加载失败时，会消费对应 admission queue 并写 `failed`/`cancelled` usage 终态，不再遗留 `admitted`。 |
