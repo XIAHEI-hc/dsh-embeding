@@ -25,6 +25,7 @@
 | immutable demo seed repeatability | demo seed ZIP 使用固定元数据生成；连续执行两次均成功且 SkillVersion hash 保持不变，旧版本不会被原地改写。重启 backend 后 runtime catalog 仍返回 `installed`。 |
 | instruction package execution boundary | 上传校验现在拒绝未声明顶层文件以及 `.sh/.py/.js/.mjs/.ts/.ps1/.bat/.cmd/.exe` 等脚本/可执行扩展，即使 ZIP 权限位没有标记 executable；新增 runtime contract 测试覆盖。 |
 | static asset declaration boundary | 上传校验现在要求 `assets/` 下每一个文件都必须在 manifest 的 `assets` 数组中声明，避免 archive hash 覆盖了 manifest 未授权的静态内容；backend contract 测试覆盖，并已重建运行中的 Memory Lab backend。 |
+| canonical remote skill identity | resolve 响应现在返回并校验不可变 `runtime_name`、activation/version/generation 与 archive hash；Provider 不再接受只凭 locator 伪造名称的 native get，A/B runner 镜像已重建并重启。 |
 | ACK replay semantics | 同一 `ack_id` 的重试忽略新的 transport `request_id` 并幂等返回；改变 generation/hash/status/provider revision 仍产生冲突，新增协议测试覆盖。 |
 | scoped runtime credential fence | `AI_DSH_REQUIRE_SCOPED_RUNTIME=true` 时，全局 control secret 不再能用于带 runtime ID 的 runtime data-plane 请求；只有对应 runner credential 能通过，真实 runner-a catalog 仍返回 200。 |
 | queued skill terminal fact | queued `/ml-*` 在切版、停用、revoke 或正文加载失败时，会消费对应 admission queue 并写 `failed`/`cancelled` usage 终态，不再遗留 `admitted`。 |
