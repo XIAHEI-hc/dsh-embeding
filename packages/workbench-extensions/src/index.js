@@ -450,8 +450,15 @@ export async function apply(ctx) {
   }
   const registerAgentProvider = (agent, installed) => {
     if (registeredProviders.has(agent)) return
-    agent.ctx.skills.registerProvider(() => installed.provider)
-    registeredProviders.add(agent)
+    // Agent contexts are scoped Cordis children.  Services are intentionally
+    // only readable after an explicit injection, even when the host context
+    // already has the service.  Registering through the injected child keeps
+    // the provider in the agent's scope and prevents a per-session provider
+    // from becoming global.
+    agent.ctx.inject(['skills'], (skillsCtx) => {
+      skillsCtx.skills.registerProvider(() => installed.provider)
+      registeredProviders.add(agent)
+    })
   }
   const agentSyncTimers = new WeakMap()
   const agentSyncControllers = new WeakMap()
