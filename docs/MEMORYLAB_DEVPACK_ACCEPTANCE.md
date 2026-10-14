@@ -41,6 +41,7 @@
 
 - ISO-09 至 ISO-12 的完整 create/fork、浏览器切换、旧 cookie 和生命周期矩阵。
 - ISO-13 WS 已连接时撤销/禁用的浏览器实测。
+- 浏览器现场尝试：Memory Lab mock login/bootstrap 成功，gateway scope redeem 命令行返回 303/200；Codex IAB 对 `localhost:8875` 被客户端阻断，改为 `127.0.0.1:8875` 后 iframe 仍被 IAB 网络拒绝连接，原生 Chrome 自动化未完成，因此不计入浏览器 PASS。
 - SKL-05 真实模型收到指定 hash instruction 并完成 CHN 工具调用；当前已验证 receipt/usage 链路，未声称模型质量通过。
 - SKL-09 至 SKL-17 的现场切版、断连缓存、排队停用、terminal usage 和多 `/ml-*` 提交矩阵。
 - REC-01 gateway/runner 重启恢复、REG-01 独立 DSH 回归、PRO-03 单边升级/停机、OPS-01 回滚覆盖。
