@@ -11,7 +11,7 @@ test('provider only exposes installed fixed versions and resolves through broker
     return { ok: true, async json() { return url.endsWith('/catalog') ? { items: [
       { desired_enabled: true, ack_status: 'installed', runtime_name: 'ml-chn-v1-0-0-habc', display_name: 'CHN', version: '1.0.0', description: 'facts', activation_id: 'a', version_id: 'v', generation: 2, archive_sha256: 'a'.repeat(64) },
       { desired_enabled: true, ack_status: 'pending', runtime_name: 'ml-pending-v1-0-0-hdef', display_name: 'Pending', version: '1.0.0', description: '', activation_id: 'p', version_id: 'pv', generation: 1, archive_sha256: 'b'.repeat(64) },
-    ] } : { archive_sha256: 'a'.repeat(64), instruction: 'Use facts.', instruction_sha256: 'c'.repeat(64) } } }
+    ] } : { runtime_name: 'ml-chn-v1-0-0-habc', activation_id: 'a', version_id: 'v', generation: 2, archive_sha256: 'a'.repeat(64), instruction: 'Use facts.', instruction_sha256: 'c'.repeat(64) } } }
   }
   const provider = createRemoteProvider({ baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope, fetchImpl })
   const [candidate] = await provider.list()
@@ -33,9 +33,9 @@ test('synchronizer acknowledges only a self-checked fixed version', async () => 
   const fetchImpl = async (url, options) => {
     const body = JSON.parse(options.body); calls.push({ url, body })
     return { ok: true, json: async () => url.endsWith('/catalog')
-      ? { catalog_revision: 'rev-1', items: [{ desired_enabled: true, activation_id: 'a', version_id: 'v', generation: 3, archive_sha256: 'a'.repeat(64) }] }
+      ? { catalog_revision: 'rev-1', items: [{ desired_enabled: true, runtime_name: 'ml-chn-v1-0-0-habc', activation_id: 'a', version_id: 'v', generation: 3, archive_sha256: 'a'.repeat(64) }] }
       : url.endsWith('/resolve')
-        ? { archive_sha256: 'a'.repeat(64), instruction: 'Use facts.', instruction_sha256: 'c'.repeat(64) }
+        ? { runtime_name: 'ml-chn-v1-0-0-habc', activation_id: 'a', version_id: 'v', generation: 3, archive_sha256: 'a'.repeat(64), instruction: 'Use facts.', instruction_sha256: 'c'.repeat(64) }
         : { accepted: true, duplicate: false } }
   }
   const result = await synchronizeRemoteProvider({ baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope, fetchImpl })

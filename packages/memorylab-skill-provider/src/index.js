@@ -43,7 +43,13 @@ export async function synchronizeRemoteProvider({ baseUrl, serviceSecret, instan
     const status = row.desired_enabled ? 'installed' : 'removed'
     if (row.desired_enabled) {
       const resolved = await protocolRequest({ baseUrl, serviceSecret, instanceId, runtimeId, scope, path: '/resolve', body: locator, fetchImpl, signal })
-      if (resolved.archive_sha256 !== row.archive_sha256 || typeof resolved.instruction !== 'string' || typeof resolved.instruction_sha256 !== 'string') {
+      if (resolved.archive_sha256 !== row.archive_sha256
+        || resolved.runtime_name !== row.runtime_name
+        || resolved.activation_id !== row.activation_id
+        || resolved.version_id !== row.version_id
+        || resolved.generation !== row.generation
+        || typeof resolved.instruction !== 'string'
+        || typeof resolved.instruction_sha256 !== 'string') {
         const error = new Error('resolved skill hash mismatch'); error.code = 'HASH_MISMATCH'; throw error
       }
       installed.push({ ...row, locator })
@@ -91,7 +97,13 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
       abortIfNeeded(options.signal)
       if (candidate?.provider !== PROVIDER || candidate?.locator?.owner !== captured.context_id) { const error = new Error('candidate scope denied'); error.code = 'SCOPE_DENIED'; throw error }
       const result = await request('/resolve', { activation_id: candidate.locator.activation_id, version_id: candidate.locator.version_id, generation: candidate.locator.generation, archive_sha256: candidate.locator.archive_sha256 }, options.signal)
-      if (candidate.name !== `ml-${candidate.name.slice(3)}` || result.archive_sha256 !== candidate.locator.archive_sha256) { const error = new Error('skill version changed'); error.code = 'SKILL_VERSION_CHANGED'; throw error }
+      if (result.runtime_name !== candidate.name
+        || result.activation_id !== candidate.locator.activation_id
+        || result.version_id !== candidate.locator.version_id
+        || result.generation !== candidate.locator.generation
+        || result.archive_sha256 !== candidate.locator.archive_sha256) {
+        const error = new Error('skill version changed'); error.code = 'SKILL_VERSION_CHANGED'; throw error
+      }
       abortIfNeeded(options.signal)
       return { name: candidate.name, description: candidate.description, source: 'memorylab', provider: PROVIDER, invocation: { userInvocable: true, modelInvocable: false }, content: result.instruction, resourceBase: { kind: 'opaque', description: '静态资源通过已授权 Memory Lab broker 提供。' }, metadata: { ...candidate.metadata, instruction_sha256: result.instruction_sha256, archive_sha256: result.archive_sha256 } }
     },
