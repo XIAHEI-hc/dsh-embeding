@@ -74,7 +74,7 @@ test('Memory Lab tool definitions compile and register with the official schema 
     effect(callback) { dispose = callback() },
   })
 
-  assert.equal(definitions.length, 6)
+  assert.equal(definitions.length, 7)
   dispose()
 })
 
@@ -104,3 +104,4 @@ test('Memory Lab upload accepts only a CSV inside the DSH attachment store', asy
   assert.equal(uploaded, true)
   await assert.rejects(client(root, store).upload(outside, exec), /FILE_NOT_ALLOWED/u)
 })
+

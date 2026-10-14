@@ -99,9 +99,24 @@ export class MemoryLabToolClient {
     }
   }
 
-  async upload(filePath, exec) {
+  async upload(reference, exec) {
     const { binding, sessionId } = this.binding(exec)
-    const actual = realpathSync(resolve(filePath))
+    const attachmentId = typeof reference === 'object' ? reference?.attachmentId : undefined
+    const filePath = typeof reference === 'object' ? reference?.filePath : reference
+    if ((attachmentId === undefined) === (filePath === undefined)) {
+      throw new Error('ATTACHMENT_REFERENCE_REQUIRED: provide exactly one attachment_id or file_path')
+    }
+    let candidate
+    if (attachmentId !== undefined) {
+      if (typeof attachmentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/u.test(attachmentId)) {
+        throw new Error('ATTACHMENT_ID_INVALID: attachment_id must be an opaque file id')
+      }
+      candidate = resolve(this.attachmentsRoot, attachmentId)
+    } else {
+      if (typeof filePath !== 'string' || filePath.length === 0) throw new Error('FILE_PATH_INVALID')
+      candidate = resolve(filePath)
+    }
+    const actual = realpathSync(candidate)
     if (actual !== this.attachmentsRoot && !actual.startsWith(`${this.attachmentsRoot}${sep}`)) {
       throw new Error('FILE_NOT_ALLOWED: only a file attached in this DSH conversation can be uploaded')
     }

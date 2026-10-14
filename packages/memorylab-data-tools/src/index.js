@@ -52,9 +52,9 @@ function definition(client, [toolName, description, parameters]) {
 function uploadDefinition(client) {
   return defineTool({
     name: 'memorylab_upload_chn_csv',
-    description: 'Upload one CSV attached to this DSH conversation into the real Memory Lab CHN import pipeline. Use the read-only attachment path shown in the user message; do not copy or rewrite the file first.',
+    description: 'Upload one CSV attached to this DSH conversation into the real Memory Lab CHN import pipeline. Prefer the opaque attachment_id from the current session; file_path is a constrained compatibility reference.',
     parameters: {
-      file_path: { type: 'string', description: 'Absolute read-only process path of the attached CSV.', required: true },
+      file_path: { type: 'string', description: 'Compatibility reference: absolute read-only path of an attachment under this session attachment root.', required: true },
     },
     output: {
       schema: { type: 'object', additionalProperties: false, properties: { response_json: { type: 'string', required: true } } },
@@ -67,10 +67,29 @@ function uploadDefinition(client) {
   })
 }
 
+function attachmentUploadDefinition(client) {
+  return defineTool({
+    name: 'memorylab_upload_chn_attachment',
+    description: 'Upload one CSV attachment identified by the opaque attachment_id from this DSH session into Memory Lab.',
+    parameters: {
+      attachment_id: { type: 'string', description: 'Opaque attachment id from the current DSH session.', required: true },
+    },
+    output: {
+      schema: { type: 'object', additionalProperties: false, properties: { response_json: { type: 'string', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: value.response_json }],
+    },
+    async execute(args, exec) {
+      return { response_json: JSON.stringify(await client.upload({ attachmentId: args.attachment_id }, exec), null, 2) }
+    },
+    presentCall: args => ({ card: 'generic', title: 'Memory Lab: upload CHN attachment', kind: 'other', rawInput: args }),
+  })
+}
+
 export function apply(ctx) {
   if (!['true', '1'].includes(process.env.MEMORYLAB_AI_INTEGRATION_ENABLED ?? '')) return
   const client = new MemoryLabToolClient()
   ctx.tools.register(uploadDefinition(client))
+  ctx.tools.register(attachmentUploadDefinition(client))
   for (const item of TOOLS) ctx.tools.register(definition(client, item))
   ctx.effect(() => () => client.close(), 'memorylab-data-tools lifecycle')
 }
