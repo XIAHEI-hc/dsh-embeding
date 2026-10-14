@@ -9,7 +9,7 @@
 
 | 范围 | 证据 |
 |---|---|
-| DSH 扩展回归 | `npm run test:extensions`：41/41 通过；包含 live Memory Lab lease verify、延迟 provider 注册和 fork rollback。 |
+| DSH 扩展回归 | `npm run test:extensions`：42/42 通过；包含 live Memory Lab lease verify、延迟 provider 注册、fork rollback 和重启后 active binding 扫描。 |
 | Memory Lab 后端回归 | `PYTHONPATH=backend; python -m pytest -q backend/tests`：61/61 通过；Windows 退出清理阶段的 SQLite `WinError 32` 不影响 pytest 返回码 0。 |
 | Memory Lab 前端 | `npm run typecheck`、`npm run build` 均通过（既有验收记录）。 |
 | 协议契约 | DevPack `python acceptance/check_contracts.py`：6 个合法示例通过，2 个伪造 scope 被拒绝。脚本已显式使用 UTF-8，避免 Windows GBK 环境误报。 |
@@ -27,6 +27,7 @@
 | CHN 权限边界 | runtime bridge 现在额外要求 `chn_vis:use`；即使拥有 `ai_workbench:use`，没有 CHN 权限的用户也不能 query/upload。新增测试覆盖。 |
 | WebSocket live fence | gateway 在升级成功后按 live-check interval 重新验证 Memory Lab lease，失效时销毁浏览器与 runner 两端 socket。 |
 | fork pre-persistence admission | 官方 session-controller fork 在生成 child ID 后、`agents.create()` 前触发 `api-session/fork-admission`；DSH 先调用 Memory Lab 的 service-auth runtime association endpoint，以 parent 的 live lease/context/runtime 预绑定 child，再写本地 binding；native fork 持久化失败时通过 `api-session/fork-failed` 在两端精确清理未物化 binding。 |
+| 后台 runtime synchronizer | DSH extension 启动时立即扫描持久化的 active binding，并每 30 秒重试 `catalog → resolve → ack`；按 session 去重、dispose 时取消请求。A/B runner 镜像已在真实 private compose 中重建并重启，启动日志无 activation error。真实 catalog 请求返回 `200`；当前持久化 binding 中仍有历史 grant，服务按设计保留 `pending/unreachable` 投影并等待下一次有效授权绑定，未将该观察误报为 `synced`。 |
 
 ## 实现对应关系
 
