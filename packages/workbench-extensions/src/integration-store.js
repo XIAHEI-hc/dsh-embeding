@@ -68,6 +68,16 @@ export class IntegrationStore {
         updated_at INTEGER NOT NULL,
         PRIMARY KEY(client_id, request_id)
       );
+      CREATE TABLE IF NOT EXISTS skill_usage_outbox (
+        event_id TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS skill_usage_outbox_due
+        ON skill_usage_outbox(next_attempt_at, created_at);
     `)
     const columns = this.db.prepare('PRAGMA table_info(integration_bindings)').all()
     if (!columns.some(column => column.name === 'runtime_id')) this.db.exec('ALTER TABLE integration_bindings ADD COLUMN runtime_id TEXT')
@@ -244,6 +254,39 @@ export class IntegrationStore {
     if (clientId !== undefined) { clauses.push('client_id = ?'); values.push(clientId) }
     const result = this.db.prepare(`DELETE FROM integration_bindings WHERE ${clauses.join(' AND ')}`).run(...values)
     return result.changes
+  }
+
+  enqueueUsage(eventId, payload, nextAttemptAt = this.now()) {
+    if (typeof eventId !== 'string' || eventId.length === 0) throw new TypeError('usage event_id required')
+    const serialized = JSON.stringify(payload)
+    const now = this.now()
+    this.db.prepare(`INSERT OR IGNORE INTO skill_usage_outbox(
+      event_id, payload_json, attempts, next_attempt_at, created_at, updated_at
+    ) VALUES(?, ?, 0, ?, ?, ?)`)
+      .run(eventId, serialized, nextAttemptAt, now, now)
+  }
+
+  pendingUsage(limit = 100) {
+    const rows = this.db.prepare(`SELECT event_id, payload_json, attempts, next_attempt_at
+      FROM skill_usage_outbox WHERE next_attempt_at <= ?
+      ORDER BY created_at ASC LIMIT ?`).all(this.now(), limit)
+    return rows.map(row => ({
+      eventId: row.event_id,
+      payload: JSON.parse(row.payload_json),
+      attempts: row.attempts,
+      nextAttemptAt: row.next_attempt_at,
+    }))
+  }
+
+  markUsageDelivered(eventId) {
+    this.db.prepare('DELETE FROM skill_usage_outbox WHERE event_id = ?').run(eventId)
+  }
+
+  rescheduleUsage(eventId, delayMs = 30_000) {
+    const now = this.now()
+    this.db.prepare(`UPDATE skill_usage_outbox
+      SET attempts = attempts + 1, next_attempt_at = ?, updated_at = ?
+      WHERE event_id = ?`).run(now + Math.max(1_000, delayMs), now, eventId)
   }
 
   close() { this.db.close() }

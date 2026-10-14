@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import {
   embedEnabled,
   loadEmbedConfig,
@@ -84,6 +84,52 @@ async function admitRemotePrompt(integration, config, request, admittedPrompts, 
     }
     throw new WorkbenchExtensionError('SKILL_PROVIDER_UNAVAILABLE', { cause: error })
   } finally { controller.abort() }
+}
+
+/**
+ * Keep usage facts durable across a broker outage or runner restart.  The
+ * event id is generated before the first request and is persisted with the
+ * redacted protocol payload, so a later retry remains idempotent at Memory
+ * Lab.  `required` is used for loaded: without an accepted loaded fact the
+ * native turn must not proceed as if the instruction had been observed.
+ */
+async function recordUsageDurably(integration, config, payload, { signal, required = false } = {}) {
+  const eventId = payload.eventId ?? randomUUID()
+  const durable = { ...payload, eventId }
+  try {
+    const result = await recordUsage({
+      ...durable, baseUrl: config.apiOrigin, serviceSecret: config.toolSecret,
+      instanceId: config.instanceId, signal,
+    })
+    integration.store.markUsageDelivered(eventId)
+    return result
+  } catch (error) {
+    integration.store.enqueueUsage(eventId, durable)
+    if (required) throw error
+    return undefined
+  }
+}
+
+async function drainUsageOutbox(integration, config) {
+  if (integration === undefined || config.integrationKind !== 'memorylab') return
+  for (const item of integration.store.pendingUsage()) {
+    try {
+      await recordUsage({
+        ...item.payload, baseUrl: config.apiOrigin, serviceSecret: config.toolSecret,
+        instanceId: config.instanceId,
+      })
+      integration.store.markUsageDelivered(item.eventId)
+    } catch (error) {
+      // A transient broker/authorization failure must remain durable.  The
+      // next synchronizer tick retries with the same event_id.  Invalid
+      // phase transitions are permanent and would otherwise poison the queue.
+      if (error?.code === 'USAGE_TERMINAL' || error?.code === 'USAGE_PHASE_INVALID') {
+        integration.store.markUsageDelivered(item.eventId)
+      } else {
+        integration.store.rescheduleUsage(item.eventId)
+      }
+    }
+  }
 }
 
 function clientAllows(client, parentOrigin, alias) {
@@ -412,6 +458,7 @@ export async function apply(ctx) {
   const backgroundSyncInFlight = new Map()
   const syncBoundRuntimes = async () => {
     if (integration === undefined || integrationConfig.integrationKind !== 'memorylab') return
+    await drainUsageOutbox(integration, integrationConfig)
     for (const binding of integration.store.activeBindings()) {
       if (binding.runtimeId === undefined || binding.accessGrantId === undefined) continue
       if (backgroundSyncInFlight.has(binding.sessionId)) continue
@@ -512,12 +559,11 @@ export async function apply(ctx) {
           const queuedIndex = queue.findIndex(item => item.skillName === names[0])
           const settleQueued = async (queued, phase, errorCode) => {
             if (queued === undefined) return
-            await recordUsage({
-              baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
-              instanceId: integrationConfig.instanceId, runtimeId: installed.binding.runtimeId,
-              scope: installed.scope, locator: queued.locator, invocationId: queued.invocationId,
-              nativeRequestId: queued.nativeRequestId, phase, errorCode, signal: payload.signal,
-            }).catch(() => {})
+          await recordUsageDurably(integration, integrationConfig, {
+            runtimeId: installed.binding.runtimeId, scope: installed.scope,
+            locator: queued.locator, invocationId: queued.invocationId,
+            nativeRequestId: queued.nativeRequestId, phase, errorCode,
+          }, { signal: payload.signal })
           }
           if (candidate === undefined) {
             const queued = queuedIndex < 0 ? undefined : queue.splice(queuedIndex, 1)[0]
@@ -537,12 +583,11 @@ export async function apply(ctx) {
           try {
             const definition = await installed.provider.get(candidate, { signal: payload.signal })
             if (definition === undefined) throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
-            await recordUsage({
-              baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
-              instanceId: integrationConfig.instanceId, runtimeId: installed.binding.runtimeId,
-              scope: installed.scope, locator: candidate.locator, invocationId: admitted.invocationId,
-              nativeRequestId: admitted.nativeRequestId, phase: 'loaded', signal: payload.signal,
-            })
+            await recordUsageDurably(integration, integrationConfig, {
+              runtimeId: installed.binding.runtimeId, scope: installed.scope,
+              locator: candidate.locator, invocationId: admitted.invocationId,
+              nativeRequestId: admitted.nativeRequestId, phase: 'loaded',
+            }, { signal: payload.signal, required: true })
           } catch (error) {
             const cancelled = error?.name === 'AbortError' || error?.code === 'ABORT_ERR'
             await settleQueued(admitted, cancelled ? 'cancelled' : 'failed', error?.code ?? 'SKILL_LOAD_FAILED')
@@ -560,12 +605,10 @@ export async function apply(ctx) {
       const installed = agentProviders.get(agent)
       if (invocations.length === 0 || installed === undefined) return
       try {
-        for (const invocation of invocations) await recordUsage({
-          baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
-          instanceId: integrationConfig.instanceId, runtimeId: installed.binding.runtimeId,
-          scope: installed.scope, locator: invocation.locator, invocationId: invocation.invocationId,
-          nativeRequestId: invocation.nativeRequestId, phase: 'completed', signal,
-        })
+        for (const invocation of invocations) await recordUsageDurably(integration, integrationConfig, {
+          runtimeId: installed.binding.runtimeId, scope: installed.scope, locator: invocation.locator,
+          invocationId: invocation.invocationId, nativeRequestId: invocation.nativeRequestId, phase: 'completed',
+        }, { signal })
       } catch { /* usage outbox/retry is owned by the runtime bridge */ }
       agentInvocations.delete(agent)
     }, { global: true })
@@ -577,12 +620,10 @@ export async function apply(ctx) {
         || error?.code === 'ABORT_ERR'
         || error?.code === 'gateway/cancelled'
         || error?.code === 'CANCELLED'
-      void Promise.all(invocations.map(invocation => recordUsage({
-        baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
-        instanceId: integrationConfig.instanceId, runtimeId: installed.binding.runtimeId,
-        scope: installed.scope, locator: invocation.locator, invocationId: invocation.invocationId,
-        nativeRequestId: invocation.nativeRequestId, phase: cancelled ? 'cancelled' : 'failed',
-        errorCode: error?.code,
+      void Promise.all(invocations.map(invocation => recordUsageDurably(integration, integrationConfig, {
+        runtimeId: installed.binding.runtimeId, scope: installed.scope, locator: invocation.locator,
+        invocationId: invocation.invocationId, nativeRequestId: invocation.nativeRequestId,
+        phase: cancelled ? 'cancelled' : 'failed', errorCode: error?.code,
       }))).catch(() => {})
       agentInvocations.delete(agent)
     }, { global: true })

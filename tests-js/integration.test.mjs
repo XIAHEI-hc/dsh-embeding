@@ -207,3 +207,30 @@ test('failed prepare reservations can be retried without allocating another sess
     assert.equal(retry.sessionId, 'session-stable')
   } finally { store.close(); f.close() }
 })
+
+test('usage outbox survives restart and deduplicates stable event ids', () => {
+  const f = fixture()
+  try {
+    let now = 1_000
+    let store = new IntegrationStore(f.path, () => now)
+    const payload = {
+      scope: { context_id: 'context-a', session_id: 'session-a', access_grant_id: 'grant-a' },
+      invocationId: 'invocation-a', nativeRequestId: 'native-a', phase: 'completed',
+    }
+    store.enqueueUsage('event-a', payload)
+    store.enqueueUsage('event-a', { ...payload, phase: 'failed' })
+    assert.deepEqual(store.pendingUsage(), [{
+      eventId: 'event-a', payload, attempts: 0, nextAttemptAt: 1_000,
+    }])
+    store.rescheduleUsage('event-a', 5_000)
+    assert.equal(store.pendingUsage().length, 0)
+    store.close()
+
+    now = 6_000
+    store = new IntegrationStore(f.path, () => now)
+    assert.equal(store.pendingUsage()[0].attempts, 1)
+    store.markUsageDelivered('event-a')
+    assert.deepEqual(store.pendingUsage(), [])
+    store.close()
+  } finally { f.close() }
+})
