@@ -13,9 +13,10 @@ import { registerIntegrationRoutes } from './integration.js'
 import { loadRuntimeRegistry } from './runtime-registry.js'
 import { WorkspacePolicy } from './workspaces.js'
 import { createRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
+import { admitInvocation, recordUsage } from '@dsh-workbench/memorylab-skill-provider'
 
 export const name = 'workbench-extensions'
-export const inject = ['connection', 'sessionController', 'webServer', 'workspaceRegistry']
+export const inject = ['connection', 'sessionController', 'webServer', 'workspaceRegistry', 'skills']
 
 const PROTOCOL = 'dsh.embed'
 const VERSION = '1.0'
@@ -39,6 +40,50 @@ function findClient(config, req) {
   const matches = config.clients.filter(client => secretEqual(token, client.secret))
   if (matches.length !== 1) throw new WorkbenchExtensionError('EMBED_CLIENT_UNAUTHORIZED')
   return matches[0]
+}
+
+function remoteSkillNames(content) {
+  const names = []
+  for (const part of content ?? []) {
+    if (part?.type !== 'text' || typeof part.text !== 'string') continue
+    for (const match of part.text.matchAll(/(?:^|\s)\/(ml-[a-z0-9]+(?:-[a-z0-9]+)*)\b/gu)) names.push(match[1])
+  }
+  return [...new Set(names)]
+}
+
+function providerScope(integration, sessionId) {
+  const binding = integration.store.requireActive(sessionId)
+  if (binding.accessGrantId === undefined || binding.runtimeId === undefined) {
+    throw new WorkbenchExtensionError('CONTEXT_REVOKED', { message: 'session 没有精确运行授权' })
+  }
+  return { binding, scope: { context_id: binding.contextId, session_id: binding.sessionId, access_grant_id: binding.accessGrantId } }
+}
+
+async function admitRemotePrompt(integration, config, request) {
+  const names = remoteSkillNames(request.content)
+  if (names.length === 0) return
+  if (names.length > 1) throw new WorkbenchExtensionError('SKILL_MULTIPLE')
+  const { binding, scope } = providerScope(integration, request.sessionId)
+  const controller = new AbortController()
+  const provider = createRemoteProvider({
+    baseUrl: config.apiOrigin, serviceSecret: config.toolSecret, instanceId: config.instanceId,
+    runtimeId: binding.runtimeId, scope, control: { signal: controller.signal, invalidate() {} },
+  })
+  try {
+    const candidate = (await provider.list({ signal: controller.signal })).find(item => item.name === names[0])
+    if (candidate === undefined) throw new WorkbenchExtensionError('SKILL_NOT_ENABLED')
+    await admitInvocation({
+      baseUrl: config.apiOrigin, serviceSecret: config.toolSecret, instanceId: config.instanceId,
+      runtimeId: binding.runtimeId, scope, locator: candidate.locator,
+      invocationId: request.requestId, nativeRequestId: request.requestId, signal: controller.signal,
+    })
+  } catch (error) {
+    if (error instanceof WorkbenchExtensionError) throw error
+    if (error?.code === 'SKILL_NOT_ENABLED' || error?.code === 'SKILL_VERSION_CHANGED') {
+      throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED', { cause: error })
+    }
+    throw new WorkbenchExtensionError('SKILL_PROVIDER_UNAVAILABLE', { cause: error })
+  } finally { controller.abort() }
 }
 
 function clientAllows(client, parentOrigin, alias) {
@@ -261,24 +306,52 @@ export async function apply(ctx) {
   const integration = integrationConfig === undefined
     ? undefined
     : registerIntegrationRoutes(ctx, integrationConfig, policy, req => findClient(embedConfig, req), runtimeRegistry)
+  const agentProviders = new WeakMap()
   if (integration !== undefined && integrationConfig.integrationKind === 'memorylab') {
     ctx.on('agent/created', ({ agent }) => {
-      const binding = integration.store.requireActive(agent.session.id)
-      if (binding.accessGrantId === undefined) {
-        throw new WorkbenchExtensionError('CONTEXT_REVOKED', { message: 'session 没有精确登录授权' })
-      }
-      agent.ctx.skills.registerProvider(control => createRemoteProvider({
+      const { binding, scope } = providerScope(integration, agent.session.id)
+      agent.ctx.skills.registerProvider(control => {
+        const provider = createRemoteProvider({
         baseUrl: integrationConfig.apiOrigin,
         serviceSecret: integrationConfig.toolSecret,
         instanceId: integrationConfig.instanceId,
         runtimeId: binding.runtimeId,
-        scope: {
-          context_id: binding.contextId,
-          session_id: binding.sessionId,
-          access_grant_id: binding.accessGrantId,
-        },
+        scope,
         control,
-      }))
+        })
+        agentProviders.set(agent, { provider, binding, scope })
+        return provider
+      })
+    }, { global: true })
+    ctx.on('agent/disposed', ({ agent }) => { agentProviders.delete(agent) }, { global: true })
+    ctx.on('api-session/prompt-admission', async (request, next) => {
+      try {
+        await admitRemotePrompt(integration, integrationConfig, request)
+        return next()
+      } catch (error) { throw policy.asRemote(error) }
+    }, { global: true })
+    ctx.on('agent/pre-step', async (payload, next) => {
+      try {
+        const names = remoteSkillNames(payload.messages.flatMap(message => message.content ?? []))
+        if (names.length > 1) throw new WorkbenchExtensionError('SKILL_MULTIPLE')
+        if (names.length === 1) {
+          const installed = agentProviders.get(payload.agent)
+          if (installed === undefined) throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+          const candidate = (await installed.provider.list({ signal: payload.signal })).find(item => item.name === names[0])
+          if (candidate === undefined) throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
+          const definition = await installed.provider.get(candidate, { signal: payload.signal })
+          if (definition === undefined) throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
+          const message = payload.messages.find(item => remoteSkillNames(item.content ?? []).includes(names[0])) ?? payload.messages[0]
+          const nativeRequestId = message?.source?.rpcId ?? message?.id
+          await recordUsage({
+            baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
+            instanceId: integrationConfig.instanceId, runtimeId: installed.binding.runtimeId,
+            scope: installed.scope, locator: candidate.locator, invocationId: nativeRequestId,
+            nativeRequestId, phase: 'loaded', signal: payload.signal,
+          })
+        }
+        return next()
+      } catch (error) { throw policy.asRemote(error) }
     }, { global: true })
   }
   const disposeRoutes = registerRoutes(ctx, embedConfig, policy, store, integration, runtimeRegistry)

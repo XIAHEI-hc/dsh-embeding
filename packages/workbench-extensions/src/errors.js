@@ -27,6 +27,10 @@ export const ERROR_DEFINITIONS = Object.freeze({
   EMBED_CROSS_SITE_UNSUPPORTED: [422, false, 'use_same_site', '当前版本仅支持同站点嵌入'],
   CONFIG_INVALID: [500, false, 'fix_configuration', '工作台嵌入配置无效'],
   RUNTIME_NOT_PROVISIONED: [409, true, 'retry', '当前用户的 DSH 运行端尚未准备'],
+  SKILL_NOT_ENABLED: [403, false, 'select_skill', '该 Memory Lab 技能当前未获准使用'],
+  SKILL_VERSION_CHANGED: [409, false, 'select_skill', '该技能版本已停用或发生变化，请重新选择'],
+  SKILL_MULTIPLE: [422, false, 'split_prompt', '一次提交最多只能使用一个 Memory Lab 技能'],
+  SKILL_PROVIDER_UNAVAILABLE: [503, true, 'retry', 'Memory Lab 技能服务暂不可用'],
 })
 
 export class WorkbenchExtensionError extends Error {

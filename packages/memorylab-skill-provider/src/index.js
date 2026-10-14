@@ -70,4 +70,17 @@ export async function admitInvocation({ baseUrl, serviceSecret, instanceId, runt
   return payload
 }
 
+/** Record one fact about a receipt after the native host has observed it. */
+export async function recordUsage({ baseUrl, serviceSecret, instanceId, runtimeId, scope, locator, invocationId, nativeRequestId, phase, eventId = randomUUID(), occurredAt = new Date().toISOString(), errorCode, fetchImpl = fetch, signal }) {
+  const response = await fetchImpl(`${baseUrl.replace(/\/$/u, '')}/usage`, {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${serviceSecret}`, 'x-dsh-instance-id': instanceId, 'x-dsh-runtime-id': runtimeId },
+    body: JSON.stringify({ protocol_version: '1.0', request_id: randomUUID(), ...scope, ...locator, event_id: eventId, invocation_id: invocationId, native_request_id: nativeRequestId, phase, occurred_at: occurredAt, ...(errorCode === undefined ? {} : { error_code: errorCode }) }),
+    signal,
+  })
+  const payload = await response.json().catch(() => undefined)
+  if (!response.ok) { const error = new Error(payload?.error?.message ?? payload?.detail?.message ?? `Memory Lab usage failed: ${response.status}`); error.code = payload?.error?.code ?? payload?.detail?.code ?? 'PROVIDER_UNAVAILABLE'; throw error }
+  return payload
+}
+
 export { PROVIDER }
