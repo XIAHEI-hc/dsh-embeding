@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 const root = resolve(process.env.PRIVATE_RUNTIME_DIR ?? 'examples/deploy/private')
 const userA = process.env.MEMORYLAB_USER_A_ID ?? '00000000-0000-4000-8000-00000000000a'
 const userB = process.env.MEMORYLAB_USER_B_ID ?? '00000000-0000-4000-8000-00000000000b'
-const apiOrigin = process.env.MEMORYLAB_API_ORIGIN ?? 'http://private_mem_lab-backend-1:8000'
+const apiOrigin = process.env.MEMORYLAB_API_ORIGIN ?? 'http://memorylab-api:9000'
 // The browser-facing portal and gateway must be same-site.  Production should
 // pass the public portal origin explicitly (usually the shared HTTPS origin).
 const parentOrigin = process.env.MEMORYLAB_PARENT_ORIGIN ?? 'http://dsh-gateway:8765'
@@ -68,6 +68,7 @@ for (const [name, runtime] of [['runner-a', 'runner-a'], ['runner-b', 'runner-b'
     'WORKBENCH_EMBED_ENABLED=true',
     'MEMORYLAB_AI_INTEGRATION_ENABLED=true',
     `MEMORYLAB_AI_API_ORIGIN=${apiOrigin}`,
+    `MEMORYLAB_AI_PUBLIC_ORIGIN=${apiOrigin}`,
     `MEMORYLAB_AI_DSH_INSTANCE_ID=${registry.host_instance_id}`,
     `MEMORYLAB_AI_RUNTIME_SECRET_FILE=/private/runner-client-secret`,
     'WORKBENCH_PUBLIC_URL=http://dsh-gateway:8765',

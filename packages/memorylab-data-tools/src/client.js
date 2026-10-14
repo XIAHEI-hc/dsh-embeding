@@ -9,8 +9,9 @@ function required(value, label) {
 }
 
 function secret() {
-  const direct = process.env.MEMORYLAB_AI_TOOL_SECRET
-  const file = process.env.MEMORYLAB_AI_TOOL_SECRET_FILE
+  const runner = process.env.WORKBENCH_ROLE === 'runner'
+  const direct = process.env[runner ? 'MEMORYLAB_AI_RUNTIME_SECRET' : 'MEMORYLAB_AI_TOOL_SECRET']
+  const file = process.env[runner ? 'MEMORYLAB_AI_RUNTIME_SECRET_FILE' : 'MEMORYLAB_AI_TOOL_SECRET_FILE']
   if ((direct === undefined) === (file === undefined)) {
     throw new Error('configure exactly one of MEMORYLAB_AI_TOOL_SECRET or MEMORYLAB_AI_TOOL_SECRET_FILE')
   }
@@ -30,6 +31,10 @@ export class MemoryLabToolClient {
       options.instanceId ?? process.env.MEMORYLAB_AI_DSH_INSTANCE_ID,
       'MEMORYLAB_AI_DSH_INSTANCE_ID',
     )
+    this.runtimeId = options.runtimeId ?? process.env.DSH_RUNTIME_ID
+    if (process.env.WORKBENCH_ROLE === 'runner') {
+      this.runtimeId = required(this.runtimeId, 'DSH_RUNTIME_ID')
+    }
     this.secret = options.secret ?? secret()
     this.timeoutMs = Number(options.timeoutMs ?? process.env.MEMORYLAB_AI_TOOL_TIMEOUT_MS ?? 120000)
     this.maxUploadBytes = Number(options.maxUploadBytes ?? process.env.MEMORYLAB_AI_MAX_UPLOAD_BYTES ?? 104857600)
@@ -62,6 +67,7 @@ export class MemoryLabToolClient {
       accept: 'application/json',
       authorization: `Bearer ${this.secret}`,
       'x-dsh-instance-id': this.instanceId,
+      ...(this.runtimeId === undefined ? {} : { 'x-dsh-runtime-id': this.runtimeId }),
     }
   }
 

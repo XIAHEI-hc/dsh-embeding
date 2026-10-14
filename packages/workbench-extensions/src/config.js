@@ -231,6 +231,7 @@ export function loadIntegrationConfig(
   if (!probeEnabled && !memoryLabEnabled) return undefined
   const prefix = memoryLabEnabled ? 'MEMORYLAB_AI' : 'PROBE_AI'
   const runnerRole = process.env.WORKBENCH_ROLE === 'runner'
+  const secretPrefix = memoryLabEnabled && runnerRole ? `${prefix}_RUNTIME` : `${prefix}_TOOL`
   const instanceId = string(process.env[`${prefix}_DSH_INSTANCE_ID`], `${prefix}_DSH_INSTANCE_ID`, { max: 128 })
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(instanceId)) {
     throw configError(`${prefix}_DSH_INSTANCE_ID 只允许字母、数字、点、下划线和连字符`)
@@ -241,8 +242,7 @@ export function loadIntegrationConfig(
     integrationKind: memoryLabEnabled ? 'memorylab' : 'probe',
     apiOrigin: exactOrigin(process.env[`${prefix}_API_ORIGIN`], `${prefix}_API_ORIGIN`),
     toolSecret: environmentSecret(
-      `${prefix}${memoryLabEnabled && runnerRole ? '_RUNTIME_SECRET' : '_TOOL'}_SECRET`,
-      `${prefix}${memoryLabEnabled && runnerRole ? '_RUNTIME_SECRET' : '_TOOL'}_SECRET_FILE`,
+      `${secretPrefix}_SECRET`, `${secretPrefix}_SECRET_FILE`,
       `${memoryLabEnabled ? 'Memory Lab' : 'Probe'} 工具服务 secret`,
     ),
     allowedFunctionTypes: memoryLabEnabled
