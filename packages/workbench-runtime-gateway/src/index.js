@@ -100,7 +100,9 @@ export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret,
   const maxAge = maxScopeAgeMs ?? 8 * 60 * 60 * 1000
   const verifyOrigin = process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN
   const verifyTimeoutMs = Number(process.env.MEMORYLAB_RUNTIME_VERIFY_TIMEOUT_MS ?? 5000)
-  const liveInterval = Math.max(1000, Number(liveCheckIntervalMs ?? process.env.MEMORYLAB_RUNTIME_LIVE_CHECK_INTERVAL_MS ?? 5000))
+  const configuredLiveInterval = Number(liveCheckIntervalMs ?? process.env.MEMORYLAB_RUNTIME_LIVE_CHECK_INTERVAL_MS ?? 5000)
+  const liveInterval = Number.isFinite(configuredLiveInterval) && configuredLiveInterval >= 1000
+    ? configuredLiveInterval : 5000
   const handoffs = new Map()
   const server = http.createServer(async (req, res) => {
     if (req.url === '/health') return writeJson(res, 200, { status: 'ready', host_instance_id: registry.hostInstanceId })
