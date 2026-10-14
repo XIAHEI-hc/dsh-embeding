@@ -3,12 +3,12 @@
 # The gateway is the only public service; runners have no published ports.
 services:
   dsh-gateway:
-    build: ../..
+    build: .
     command: ["npm", "run", "runtime-gateway"]
-    env_file: ./private/gateway.env
+    env_file: ./examples/deploy/private/gateway.env
     volumes:
       - type: bind
-        source: ./private/runtime-registry.json
+        source: ./examples/deploy/private/runtime-registry.json
         target: /private/runtime-registry.json
         read_only: true
     ports:
@@ -19,13 +19,13 @@ services:
     restart: unless-stopped
 
   dsh-user-a:
-    build: ../..
-    env_file: ./private/runner-a.env
+    build: .
+    env_file: ./examples/deploy/private/runner-a.env
     volumes:
       - user-a-data:/data
       - user-a-work:/workdir
       - type: bind
-        source: ./private/runner-a
+        source: ./examples/deploy/private/runner-a
         target: /private
         read_only: true
       - type: bind
@@ -38,13 +38,13 @@ services:
     restart: unless-stopped
 
   dsh-user-b:
-    build: ../..
-    env_file: ./private/runner-b.env
+    build: .
+    env_file: ./examples/deploy/private/runner-b.env
     volumes:
       - user-b-data:/data
       - user-b-work:/workdir
       - type: bind
-        source: ./private/runner-b
+        source: ./examples/deploy/private/runner-b
         target: /private
         read_only: true
       - type: bind
