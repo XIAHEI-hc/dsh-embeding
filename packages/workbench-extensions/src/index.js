@@ -427,6 +427,7 @@ export async function apply(ctx) {
   const admittedPrompts = new Map()
   const sessionProviders = new Map()
   const registeredProviders = new WeakSet()
+  const providerRegistrationFibers = new WeakMap()
   const ensureRemoteProvider = (agent, signal) => {
     const sessionId = agent.session.id
     const existing = sessionProviders.get(sessionId)
@@ -450,15 +451,24 @@ export async function apply(ctx) {
   }
   const registerAgentProvider = (agent, installed) => {
     if (registeredProviders.has(agent)) return
+    const pending = providerRegistrationFibers.get(agent)
+    if (pending !== undefined) return pending
     // Agent contexts are scoped Cordis children.  Services are intentionally
     // only readable after an explicit injection, even when the host context
     // already has the service.  Registering through the injected child keeps
     // the provider in the agent's scope and prevents a per-session provider
     // from becoming global.
-    return agent.ctx.inject(['skills'], (skillsCtx) => {
+    const fiber = agent.ctx.inject(['skills'], (skillsCtx) => {
       skillsCtx.skills.registerProvider(() => installed.provider)
       registeredProviders.add(agent)
     })
+    providerRegistrationFibers.set(agent, fiber)
+    void fiber.then(() => {
+      providerRegistrationFibers.delete(agent)
+    }, () => {
+      providerRegistrationFibers.delete(agent)
+    })
+    return fiber
   }
   const agentSyncTimers = new WeakMap()
   const agentSyncControllers = new WeakMap()
@@ -534,6 +544,7 @@ export async function apply(ctx) {
       agentInvocations.delete(agent)
       admittedPrompts.delete(agent.session.id)
       sessionProviders.delete(agent.session.id)
+      providerRegistrationFibers.delete(agent)
     }, { global: true })
     const providerForSession = (sessionId, signal) => {
       const existing = sessionProviders.get(sessionId)
