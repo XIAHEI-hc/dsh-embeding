@@ -40,6 +40,32 @@ def public_url(value):
     return value.rstrip('/'), url.netloc
 
 
+def validate_runtime_role(env=None):
+    """Fail closed before launching a runner with control-plane secrets.
+
+    The gateway and runner roles have different trust boundaries. A runner may
+    only use its short-lived broker credential; it must never inherit the
+    Memory Lab service bearer used by the gateway.
+    """
+    env = os.environ if env is None else env
+    role = (env.get('WORKBENCH_ROLE') or 'standalone').strip().lower()
+    if role not in ('standalone', 'gateway', 'runner'):
+        raise ValueError('WORKBENCH_ROLE 必须是 standalone、gateway 或 runner')
+    mode = (env.get('WORKBENCH_INTEGRATION_MODE') or '').strip().lower()
+    if role == 'runner':
+        if mode != 'embedded_multi_user':
+            raise ValueError('runner role 必须使用 WORKBENCH_INTEGRATION_MODE=embedded_multi_user')
+        if env.get('MEMORYLAB_AI_TOOL_SECRET') or env.get('MEMORYLAB_AI_TOOL_SECRET_FILE'):
+            raise ValueError('runner role 禁止继承 MEMORYLAB_AI_TOOL_SECRET')
+        for name in ('WORKBENCH_RUNNER_BROKER_ORIGIN', 'WORKBENCH_RUNNER_CREDENTIAL_FILE', 'DSH_HOME', 'WORKBENCH_WEB_WORKSPACE'):
+            if not (env.get(name) or '').strip():
+                raise ValueError(f'runner role 缺少 {name}')
+    if role == 'gateway' and mode == 'embedded_multi_user':
+        if not (env.get('WORKBENCH_RUNTIME_REGISTRY') or '').strip():
+            raise ValueError('gateway 多用户模式必须设置 WORKBENCH_RUNTIME_REGISTRY')
+    return role
+
+
 def nginx_config(port, upstream_port, temp_dir):
     if not (1 <= port <= 65535 and 1 <= upstream_port <= 65535) or port == upstream_port:
         raise ValueError('代理端口和官方 Web 内部端口必须不同，且位于 1..65535')
@@ -98,6 +124,7 @@ def stop_process(process):
 
 def serve(host, port, upstream_port=18765, trusted_hosts=()):
     load_dotenv()
+    validate_runtime_role()
     node, entry = web_distribution()
     if host not in ('127.0.0.1', 'localhost', '0.0.0.0'):
         raise ValueError('本版支持 localhost/127.0.0.1；0.0.0.0 仅用于容器 Nginx 入口')
