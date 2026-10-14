@@ -3,20 +3,20 @@
 # The gateway is the only public service; runners have no published ports.
 services:
   dsh-gateway:
-    build: .
+    build: ../..
     command: ["npm", "run", "runtime-gateway"]
-    env_file: ./examples/deploy/private/gateway.env
+    env_file: ./private/gateway.env
     volumes:
       - type: bind
-        source: ./examples/deploy/private/runtime-registry.json
+        source: ./private/runtime-registry.json
         target: /private/runtime-registry.json
         read_only: true
       - type: bind
-        source: ./examples/deploy/private/runner-a/runner-client-secret
+        source: ./private/runner-a/runner-client-secret
         target: /private/runner-a-client-secret
         read_only: true
       - type: bind
-        source: ./examples/deploy/private/runner-b/runner-client-secret
+        source: ./private/runner-b/runner-client-secret
         target: /private/runner-b-client-secret
         read_only: true
     ports:
@@ -27,12 +27,12 @@ services:
     restart: unless-stopped
 
   dsh-user-a:
-    build: .
-    env_file: ./examples/deploy/private/runner-a.env
+    build: ../..
+    env_file: ./private/runner-a.env
     volumes:
       - user-a-data:/data
       - type: bind
-        source: ./examples/deploy/private/runner-a
+        source: ./private/runner-a
         target: /private
         read_only: true
       - type: bind
@@ -45,12 +45,12 @@ services:
     restart: unless-stopped
 
   dsh-user-b:
-    build: .
-    env_file: ./examples/deploy/private/runner-b.env
+    build: ../..
+    env_file: ./private/runner-b.env
     volumes:
       - user-b-data:/data
       - type: bind
-        source: ./examples/deploy/private/runner-b
+        source: ./private/runner-b
         target: /private
         read_only: true
       - type: bind
