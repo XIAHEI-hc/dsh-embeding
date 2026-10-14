@@ -75,7 +75,7 @@ async function admitRemotePrompt(integration, config, request, admittedPrompts, 
       invocationId: request.requestId, nativeRequestId: request.requestId, signal: controller.signal,
     })
     const queue = admittedPrompts.get(request.sessionId) ?? []
-    queue.push({ invocationId: request.requestId, nativeRequestId: request.requestId, locator: candidate.locator })
+    queue.push({ invocationId: request.requestId, nativeRequestId: request.requestId, skillName: names[0], locator: candidate.locator })
     admittedPrompts.set(request.sessionId, queue)
   } catch (error) {
     if (error instanceof WorkbenchExtensionError) throw error
@@ -408,8 +408,24 @@ export async function apply(ctx) {
           const installed = agentProviders.get(payload.agent) ?? ensureRemoteProvider(payload.agent, payload.signal)
           registerAgentProvider(payload.agent, installed)
           const candidate = (await installed.provider.list({ signal: payload.signal })).find(item => item.name === names[0])
-          if (candidate === undefined) throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
           const queue = admittedPrompts.get(payload.agent.session.id) ?? []
+          const queuedIndex = queue.findIndex(item => item.skillName === names[0])
+          const settleQueued = async (queued, phase, errorCode) => {
+            if (queued === undefined) return
+            await recordUsage({
+              baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
+              instanceId: integrationConfig.instanceId, runtimeId: installed.binding.runtimeId,
+              scope: installed.scope, locator: queued.locator, invocationId: queued.invocationId,
+              nativeRequestId: queued.nativeRequestId, phase, errorCode, signal: payload.signal,
+            }).catch(() => {})
+          }
+          if (candidate === undefined) {
+            const queued = queuedIndex < 0 ? undefined : queue.splice(queuedIndex, 1)[0]
+            if (queue.length === 0) admittedPrompts.delete(payload.agent.session.id)
+            else admittedPrompts.set(payload.agent.session.id, queue)
+            await settleQueued(queued, 'failed', 'SKILL_VERSION_CHANGED')
+            throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
+          }
           const index = queue.findIndex(item => item.locator.activation_id === candidate.locator.activation_id
             && item.locator.version_id === candidate.locator.version_id
             && item.locator.generation === candidate.locator.generation
@@ -418,14 +434,20 @@ export async function apply(ctx) {
           const admitted = queue.splice(index, 1)[0]
           if (queue.length === 0) admittedPrompts.delete(payload.agent.session.id)
           else admittedPrompts.set(payload.agent.session.id, queue)
-          const definition = await installed.provider.get(candidate, { signal: payload.signal })
-          if (definition === undefined) throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
-          await recordUsage({
-            baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
-            instanceId: integrationConfig.instanceId, runtimeId: installed.binding.runtimeId,
-            scope: installed.scope, locator: candidate.locator, invocationId: admitted.invocationId,
-            nativeRequestId: admitted.nativeRequestId, phase: 'loaded', signal: payload.signal,
-          })
+          try {
+            const definition = await installed.provider.get(candidate, { signal: payload.signal })
+            if (definition === undefined) throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
+            await recordUsage({
+              baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
+              instanceId: integrationConfig.instanceId, runtimeId: installed.binding.runtimeId,
+              scope: installed.scope, locator: candidate.locator, invocationId: admitted.invocationId,
+              nativeRequestId: admitted.nativeRequestId, phase: 'loaded', signal: payload.signal,
+            })
+          } catch (error) {
+            const cancelled = error?.name === 'AbortError' || error?.code === 'ABORT_ERR'
+            await settleQueued(admitted, cancelled ? 'cancelled' : 'failed', error?.code ?? 'SKILL_LOAD_FAILED')
+            throw error
+          }
           const invocations = agentInvocations.get(payload.agent) ?? []
           invocations.push({ locator: candidate.locator, invocationId: admitted.invocationId, nativeRequestId: admitted.nativeRequestId })
           agentInvocations.set(payload.agent, invocations)
