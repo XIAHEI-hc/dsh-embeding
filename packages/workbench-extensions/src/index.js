@@ -310,6 +310,7 @@ export async function apply(ctx) {
   const agentInvocations = new WeakMap()
   const admittedPrompts = new Map()
   const sessionProviders = new Map()
+  const registeredProviders = new WeakSet()
   const ensureRemoteProvider = (agent, signal) => {
     const sessionId = agent.session.id
     const existing = sessionProviders.get(sessionId)
@@ -331,6 +332,11 @@ export async function apply(ctx) {
     agentProviders.set(agent, installed)
     return installed
   }
+  const registerAgentProvider = (agent, installed) => {
+    if (registeredProviders.has(agent)) return
+    agent.ctx.skills.registerProvider(() => installed.provider)
+    registeredProviders.add(agent)
+  }
   const agentSyncTimers = new WeakMap()
   const agentSyncControllers = new WeakMap()
   if (integration !== undefined && integrationConfig.integrationKind === 'memorylab') {
@@ -340,7 +346,7 @@ export async function apply(ctx) {
         if (error?.code === 'CONTEXT_NOT_BOUND') return
         throw error
       }
-      agent.ctx.skills.registerProvider(() => installed.provider)
+      registerAgentProvider(agent, installed)
       const { binding, scope } = installed
       try {
         await synchronizeRemoteProvider({
@@ -400,6 +406,7 @@ export async function apply(ctx) {
         if (names.length > 1) throw new WorkbenchExtensionError('SKILL_MULTIPLE')
         if (names.length === 1) {
           const installed = agentProviders.get(payload.agent) ?? ensureRemoteProvider(payload.agent, payload.signal)
+          registerAgentProvider(payload.agent, installed)
           const candidate = (await installed.provider.list({ signal: payload.signal })).find(item => item.name === names[0])
           if (candidate === undefined) throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
           const queue = admittedPrompts.get(payload.agent.session.id) ?? []
