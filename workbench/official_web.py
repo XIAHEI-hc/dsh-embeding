@@ -66,6 +66,27 @@ def validate_runtime_role(env=None):
     return role
 
 
+def initialize_runner_workspace(workspace, seed=None, role='standalone'):
+    """Materialize a private runner workspace from the read-only seed once.
+
+    A runner must execute from its own writable directory.  The seed is only a
+    bootstrap source; never copy over an existing workspace because it contains
+    user files and native session state.  Standalone and gateway processes do
+    not need a seed.
+    """
+    workspace = Path(workspace)
+    workspace.mkdir(parents=True, exist_ok=True)
+    if role != 'runner' or seed is None:
+        return False
+    seed = Path(seed)
+    if not seed.is_dir():
+        raise RuntimeError(f'runner seed directory 不存在: {seed}')
+    if any(workspace.iterdir()):
+        return False
+    shutil.copytree(seed, workspace, dirs_exist_ok=True, symlinks=True)
+    return True
+
+
 def nginx_config(port, upstream_port, temp_dir):
     if not (1 <= port <= 65535 and 1 <= upstream_port <= 65535) or port == upstream_port:
         raise ValueError('代理端口和官方 Web 内部端口必须不同，且位于 1..65535')
@@ -124,7 +145,7 @@ def stop_process(process):
 
 def serve(host, port, upstream_port=18765, trusted_hosts=()):
     load_dotenv()
-    validate_runtime_role()
+    role = validate_runtime_role()
     node, entry = web_distribution()
     if host not in ('127.0.0.1', 'localhost', '0.0.0.0'):
         raise ValueError('本版支持 localhost/127.0.0.1；0.0.0.0 仅用于容器 Nginx 入口')
@@ -134,7 +155,12 @@ def serve(host, port, upstream_port=18765, trusted_hosts=()):
     data = Path(os.getenv('WORKBENCH_DATA_DIR', './data')).resolve()
     home = Path(os.getenv('WORKBENCH_WEB_HOME', str(data / 'web/dsh-home'))).resolve()
     workspace = Path(os.getenv('WORKBENCH_WEB_WORKSPACE', str(data / 'web/workspace'))).resolve()
-    home.mkdir(parents=True, exist_ok=True); workspace.mkdir(parents=True, exist_ok=True)
+    home.mkdir(parents=True, exist_ok=True)
+    initialize_runner_workspace(
+        workspace,
+        Path(os.getenv('WORKBENCH_SEED_DIR', '/seed')) if role == 'runner' else None,
+        role,
+    )
     env = os.environ.copy(); env['DSH_HOME'] = str(home); env['WORKBENCH_PUBLIC_URL'] = exposed
     bootstrap = home / 'workbench-web.patch.json'
     patches = [{'id':'workspace-controller','config':{
