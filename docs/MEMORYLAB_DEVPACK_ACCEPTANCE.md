@@ -23,6 +23,7 @@
 | runtime provider path and fixed package integrity | provider 已将 Memory Lab API origin 正确映射到 `/api/skills/runtime/v1`；demo seed 使用 content-addressed `approved/<archive_sha256>.zip`。真实 backend/runner 联调中，后台同步完成 `catalog → resolve → ack`，随后 catalog 对 `knowledge-cleanup-assistant` 与 `runtime-probe-35a513fa79` 均返回 `ack_status=installed`，resolve 均返回 200 和 instruction hash。 |
 | Memory Lab UI runtime projection | 真实 `/api/skills/me/activations` 返回两个启用项 `sync_state=synced`、`effective_enabled=true`、`generation=1` 和最近 heartbeat；Skill 详情页启用后会轮询该 projection 显示 pending 到最终运行端状态。 |
 | immutable demo seed repeatability | demo seed ZIP 使用固定元数据生成；连续执行两次均成功且 SkillVersion hash 保持不变，旧版本不会被原地改写。重启 backend 后 runtime catalog 仍返回 `installed`。 |
+| instruction package execution boundary | 上传校验现在拒绝未声明顶层文件以及 `.sh/.py/.js/.mjs/.ts/.ps1/.bat/.cmd/.exe` 等脚本/可执行扩展，即使 ZIP 权限位没有标记 executable；新增 runtime contract 测试覆盖。 |
 | queued skill terminal fact | queued `/ml-*` 在切版、停用、revoke 或正文加载失败时，会消费对应 admission queue 并写 `failed`/`cancelled` usage 终态，不再遗留 `admitted`。 |
 | 跨 runtime 拒绝 | B 使用 A 的 context/session/grant 重放 catalog、resolve、admit、usage、ack 均得到 `403 SCOPE_DENIED`。 |
 | live revoke | logout 前旧 scope cookie 访问带 channel 的 embed 为 200；logout 后同一 cookie 为 403。无 scope cookie 的 embed/API 请求为 401。 |
