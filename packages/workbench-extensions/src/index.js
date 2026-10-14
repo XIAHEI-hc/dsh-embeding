@@ -59,7 +59,7 @@ function providerScope(integration, sessionId) {
   return { binding, scope: { context_id: binding.contextId, session_id: binding.sessionId, access_grant_id: binding.accessGrantId } }
 }
 
-async function admitRemotePrompt(integration, config, request) {
+async function admitRemotePrompt(integration, config, request, admittedPrompts) {
   const names = remoteSkillNames(request.content)
   if (names.length === 0) return
   if (names.length > 1) throw new WorkbenchExtensionError('SKILL_MULTIPLE')
@@ -77,6 +77,9 @@ async function admitRemotePrompt(integration, config, request) {
       runtimeId: binding.runtimeId, scope, locator: candidate.locator,
       invocationId: request.requestId, nativeRequestId: request.requestId, signal: controller.signal,
     })
+    const queue = admittedPrompts.get(request.sessionId) ?? []
+    queue.push({ invocationId: request.requestId, nativeRequestId: request.requestId, locator: candidate.locator })
+    admittedPrompts.set(request.sessionId, queue)
   } catch (error) {
     if (error instanceof WorkbenchExtensionError) throw error
     if (error?.code === 'SKILL_NOT_ENABLED' || error?.code === 'SKILL_VERSION_CHANGED') {
@@ -308,6 +311,7 @@ export async function apply(ctx) {
     : registerIntegrationRoutes(ctx, integrationConfig, policy, req => findClient(embedConfig, req), runtimeRegistry)
   const agentProviders = new WeakMap()
   const agentInvocations = new WeakMap()
+  const admittedPrompts = new Map()
   const agentSyncTimers = new WeakMap()
   const agentSyncControllers = new WeakMap()
   if (integration !== undefined && integrationConfig.integrationKind === 'memorylab') {
@@ -356,10 +360,11 @@ export async function apply(ctx) {
       agentSyncControllers.delete(agent)
       agentProviders.delete(agent)
       agentInvocations.delete(agent)
+      admittedPrompts.delete(agent.session.id)
     }, { global: true })
     ctx.on('api-session/prompt-admission', async (request, next) => {
       try {
-        await admitRemotePrompt(integration, integrationConfig, request)
+        await admitRemotePrompt(integration, integrationConfig, request, admittedPrompts)
         return next()
       } catch (error) { throw policy.asRemote(error) }
     }, { global: true })
@@ -372,49 +377,60 @@ export async function apply(ctx) {
           if (installed === undefined) throw new WorkbenchExtensionError('CONTEXT_REVOKED')
           const candidate = (await installed.provider.list({ signal: payload.signal })).find(item => item.name === names[0])
           if (candidate === undefined) throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
+          const queue = admittedPrompts.get(payload.agent.session.id) ?? []
+          const index = queue.findIndex(item => item.locator.activation_id === candidate.locator.activation_id
+            && item.locator.version_id === candidate.locator.version_id
+            && item.locator.generation === candidate.locator.generation
+            && item.locator.archive_sha256 === candidate.locator.archive_sha256)
+          if (index < 0) throw new WorkbenchExtensionError('CONTEXT_REVOKED', { message: '技能提交没有有效 admission receipt' })
+          const admitted = queue.splice(index, 1)[0]
+          if (queue.length === 0) admittedPrompts.delete(payload.agent.session.id)
+          else admittedPrompts.set(payload.agent.session.id, queue)
           const definition = await installed.provider.get(candidate, { signal: payload.signal })
           if (definition === undefined) throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
-          const message = payload.messages.find(item => remoteSkillNames(item.content ?? []).includes(names[0])) ?? payload.messages[0]
-          const nativeRequestId = message?.source?.rpcId ?? message?.id
           await recordUsage({
             baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
             instanceId: integrationConfig.instanceId, runtimeId: installed.binding.runtimeId,
-            scope: installed.scope, locator: candidate.locator, invocationId: nativeRequestId,
-            nativeRequestId, phase: 'loaded', signal: payload.signal,
+            scope: installed.scope, locator: candidate.locator, invocationId: admitted.invocationId,
+            nativeRequestId: admitted.nativeRequestId, phase: 'loaded', signal: payload.signal,
           })
-          agentInvocations.set(payload.agent, { locator: candidate.locator, invocationId: nativeRequestId, nativeRequestId })
+          const invocations = agentInvocations.get(payload.agent) ?? []
+          invocations.push({ locator: candidate.locator, invocationId: admitted.invocationId, nativeRequestId: admitted.nativeRequestId })
+          agentInvocations.set(payload.agent, invocations)
         }
         return next()
       } catch (error) { throw policy.asRemote(error) }
     }, { global: true })
     ctx.on('agent/turn-stopping', async ({ agent, signal }) => {
-      const invocation = agentInvocations.get(agent)
+      const invocations = agentInvocations.get(agent) ?? []
       const installed = agentProviders.get(agent)
-      if (invocation === undefined || installed === undefined) return
+      if (invocations.length === 0 || installed === undefined) return
       try {
-        await recordUsage({
+        for (const invocation of invocations) await recordUsage({
           baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
           instanceId: integrationConfig.instanceId, runtimeId: installed.binding.runtimeId,
           scope: installed.scope, locator: invocation.locator, invocationId: invocation.invocationId,
           nativeRequestId: invocation.nativeRequestId, phase: 'completed', signal,
         })
       } catch { /* usage outbox/retry is owned by the runtime bridge */ }
+      agentInvocations.delete(agent)
     }, { global: true })
     ctx.on('agent/error', ({ agent, error }) => {
-      const invocation = agentInvocations.get(agent)
+      const invocations = agentInvocations.get(agent) ?? []
       const installed = agentProviders.get(agent)
-      if (invocation === undefined || installed === undefined) return
+      if (invocations.length === 0 || installed === undefined) return
       const cancelled = error?.name === 'AbortError'
         || error?.code === 'ABORT_ERR'
         || error?.code === 'gateway/cancelled'
         || error?.code === 'CANCELLED'
-      void recordUsage({
+      void Promise.all(invocations.map(invocation => recordUsage({
         baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
         instanceId: integrationConfig.instanceId, runtimeId: installed.binding.runtimeId,
         scope: installed.scope, locator: invocation.locator, invocationId: invocation.invocationId,
         nativeRequestId: invocation.nativeRequestId, phase: cancelled ? 'cancelled' : 'failed',
         errorCode: error?.code,
-      }).catch(() => {})
+      }))).catch(() => {})
+      agentInvocations.delete(agent)
     }, { global: true })
   }
   const disposeRoutes = registerRoutes(ctx, embedConfig, policy, store, integration, runtimeRegistry)
