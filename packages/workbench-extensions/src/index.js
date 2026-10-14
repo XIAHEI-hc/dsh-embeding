@@ -307,6 +307,7 @@ export async function apply(ctx) {
     ? undefined
     : registerIntegrationRoutes(ctx, integrationConfig, policy, req => findClient(embedConfig, req), runtimeRegistry)
   const agentProviders = new WeakMap()
+  const agentInvocations = new WeakMap()
   const agentSyncTimers = new WeakMap()
   const agentSyncControllers = new WeakMap()
   if (integration !== undefined && integrationConfig.integrationKind === 'memorylab') {
@@ -354,6 +355,7 @@ export async function apply(ctx) {
       agentSyncTimers.delete(agent)
       agentSyncControllers.delete(agent)
       agentProviders.delete(agent)
+      agentInvocations.delete(agent)
     }, { global: true })
     ctx.on('api-session/prompt-admission', async (request, next) => {
       try {
@@ -380,9 +382,39 @@ export async function apply(ctx) {
             scope: installed.scope, locator: candidate.locator, invocationId: nativeRequestId,
             nativeRequestId, phase: 'loaded', signal: payload.signal,
           })
+          agentInvocations.set(payload.agent, { locator: candidate.locator, invocationId: nativeRequestId, nativeRequestId })
         }
         return next()
       } catch (error) { throw policy.asRemote(error) }
+    }, { global: true })
+    ctx.on('agent/turn-stopping', async ({ agent, signal }) => {
+      const invocation = agentInvocations.get(agent)
+      const installed = agentProviders.get(agent)
+      if (invocation === undefined || installed === undefined) return
+      try {
+        await recordUsage({
+          baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
+          instanceId: integrationConfig.instanceId, runtimeId: installed.binding.runtimeId,
+          scope: installed.scope, locator: invocation.locator, invocationId: invocation.invocationId,
+          nativeRequestId: invocation.nativeRequestId, phase: 'completed', signal,
+        })
+      } catch { /* usage outbox/retry is owned by the runtime bridge */ }
+    }, { global: true })
+    ctx.on('agent/error', ({ agent, error }) => {
+      const invocation = agentInvocations.get(agent)
+      const installed = agentProviders.get(agent)
+      if (invocation === undefined || installed === undefined) return
+      const cancelled = error?.name === 'AbortError'
+        || error?.code === 'ABORT_ERR'
+        || error?.code === 'gateway/cancelled'
+        || error?.code === 'CANCELLED'
+      void recordUsage({
+        baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
+        instanceId: integrationConfig.instanceId, runtimeId: installed.binding.runtimeId,
+        scope: installed.scope, locator: invocation.locator, invocationId: invocation.invocationId,
+        nativeRequestId: invocation.nativeRequestId, phase: cancelled ? 'cancelled' : 'failed',
+        errorCode: error?.code,
+      }).catch(() => {})
     }, { global: true })
   }
   const disposeRoutes = registerRoutes(ctx, embedConfig, policy, store, integration, runtimeRegistry)
