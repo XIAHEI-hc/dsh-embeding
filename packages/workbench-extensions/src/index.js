@@ -12,6 +12,7 @@ import { bearer, method, readJson, requestId, secretEqual, writeError, writeJson
 import { registerIntegrationRoutes } from './integration.js'
 import { loadRuntimeRegistry } from './runtime-registry.js'
 import { WorkspacePolicy } from './workspaces.js'
+import { createRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
 
 export const name = 'workbench-extensions'
 export const inject = ['connection', 'sessionController', 'webServer', 'workspaceRegistry']
@@ -260,6 +261,26 @@ export async function apply(ctx) {
   const integration = integrationConfig === undefined
     ? undefined
     : registerIntegrationRoutes(ctx, integrationConfig, policy, req => findClient(embedConfig, req), runtimeRegistry)
+  if (integration !== undefined && integrationConfig.integrationKind === 'memorylab') {
+    ctx.on('agent/created', ({ agent }) => {
+      const binding = integration.store.requireActive(agent.session.id)
+      if (binding.accessGrantId === undefined) {
+        throw new WorkbenchExtensionError('CONTEXT_REVOKED', { message: 'session 没有精确登录授权' })
+      }
+      agent.ctx.skills.registerProvider(control => createRemoteProvider({
+        baseUrl: integrationConfig.apiOrigin,
+        serviceSecret: integrationConfig.toolSecret,
+        instanceId: integrationConfig.instanceId,
+        runtimeId: binding.runtimeId,
+        scope: {
+          context_id: binding.contextId,
+          session_id: binding.sessionId,
+          access_grant_id: binding.accessGrantId,
+        },
+        control,
+      }))
+    }, { global: true })
+  }
   const disposeRoutes = registerRoutes(ctx, embedConfig, policy, store, integration, runtimeRegistry)
   const cleanup = setInterval(() => store.cleanup(), 60_000)
   cleanup.unref()
