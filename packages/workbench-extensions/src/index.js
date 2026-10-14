@@ -9,7 +9,7 @@ import {
 import { WorkbenchExtensionError } from './errors.js'
 import { GrantStore } from './grants.js'
 import { bearer, method, readJson, requestId, secretEqual, writeError, writeJson } from './http.js'
-import { registerIntegrationRoutes } from './integration.js'
+import { associateRemoteFork, registerIntegrationRoutes, rollbackRemoteFork } from './integration.js'
 import { loadRuntimeRegistry } from './runtime-registry.js'
 import { WorkspacePolicy } from './workspaces.js'
 import { createRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
@@ -309,6 +309,17 @@ export async function apply(ctx) {
           && metadata.runtime_id !== parent.runtimeId) {
           throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH')
         }
+        if (integrationConfig.integrationKind === 'memorylab') {
+          await associateRemoteFork(integrationConfig, {
+            requestId: request.childSessionId,
+            contextId: parent.contextId,
+            childSessionId: request.childSessionId,
+            sourceSessionId: request.sourceSessionId,
+            workspaceId: parent.workspaceId,
+            accessGrantId: parent.accessGrantId,
+            runtimeId: parent.runtimeId ?? metadata.runtime_id,
+          })
+        }
         integration.store.bind({
           clientId: parent.clientId,
           contextId: parent.contextId,
@@ -323,6 +334,19 @@ export async function apply(ctx) {
     ctx.on('api-session/fork-failed', async (request, next) => {
       const parent = integration?.store.binding(request.sourceSessionId)
       if (parent !== undefined) {
+        if (integrationConfig.integrationKind === 'memorylab') {
+          try {
+            await rollbackRemoteFork(integrationConfig, {
+              requestId: request.childSessionId,
+              contextId: parent.contextId,
+              childSessionId: request.childSessionId,
+              sourceSessionId: request.sourceSessionId,
+              workspaceId: parent.workspaceId,
+              accessGrantId: parent.accessGrantId,
+              runtimeId: parent.runtimeId,
+            })
+          } catch { /* preserve native fork failure */ }
+        }
         integration.store.removeUnmaterializedBinding(request.childSessionId, {
           contextId: parent.contextId,
           clientId: parent.clientId,

@@ -71,6 +71,56 @@ async function verifyContext(config, contextId, signal, runtimeRegistry, accessG
   }
 }
 
+async function remoteForkRequest(config, path, body, signal) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(new Error('fork association timeout')), config.verifyTimeoutMs)
+  const combined = signal === undefined ? controller.signal : AbortSignal.any([signal, controller.signal])
+  try {
+    const response = await fetch(`${config.apiOrigin}${path}`, {
+      method: 'POST', signal: combined,
+      headers: {
+        accept: 'application/json', 'content-type': 'application/json',
+        authorization: `Bearer ${config.toolSecret}`,
+        'x-dsh-instance-id': config.instanceId,
+        ...(body.runtime_id === undefined ? (config.runtimeId === undefined ? {} : { 'x-dsh-runtime-id': config.runtimeId }) : { 'x-dsh-runtime-id': body.runtime_id }),
+        'x-dsh-access-grant-id': body.access_grant_id,
+      },
+      body: JSON.stringify(Object.fromEntries(Object.entries(body).filter(([key]) => key !== 'runtime_id'))),
+    })
+    const payload = await response.json().catch(() => undefined)
+    if (!response.ok || payload?.accepted !== true) {
+      if (response.status === 401 || response.status === 403 || payload?.detail?.code === 'CONTEXT_REVOKED') {
+        throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+      }
+      throw new WorkbenchExtensionError('INTEGRATION_UPSTREAM_UNAVAILABLE')
+    }
+    return payload
+  } catch (error) {
+    if (error instanceof WorkbenchExtensionError) throw error
+    throw new WorkbenchExtensionError('INTEGRATION_UPSTREAM_UNAVAILABLE', { cause: error })
+  } finally { clearTimeout(timeout) }
+}
+
+export async function associateRemoteFork(config, request, signal) {
+  if (config.integrationKind !== 'memorylab') return undefined
+  return remoteForkRequest(config, '/api/ai/runtime-session-associations', {
+    protocol_version: '1.0', request_id: request.requestId,
+    context_id: request.contextId, session_id: request.childSessionId,
+    parent_session_id: request.sourceSessionId, workspace_id: request.workspaceId,
+    access_grant_id: request.accessGrantId, runtime_id: request.runtimeId,
+  }, signal)
+}
+
+export async function rollbackRemoteFork(config, request, signal) {
+  if (config.integrationKind !== 'memorylab') return undefined
+  return remoteForkRequest(config, '/api/ai/runtime-session-associations/rollback', {
+    protocol_version: '1.0', request_id: request.requestId,
+    context_id: request.contextId, session_id: request.childSessionId,
+    parent_session_id: request.sourceSessionId, workspace_id: request.workspaceId,
+    access_grant_id: request.accessGrantId, runtime_id: request.runtimeId,
+  }, signal)
+}
+
 export function isBindableInspection(inspection, parentSessionId) {
   if (parentSessionId !== undefined) return inspection.meta.parentSession === parentSessionId
   return inspection.meta.parentSession === undefined
