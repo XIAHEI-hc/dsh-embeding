@@ -57,4 +57,17 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
   return provider
 }
 
+/** Create the server-side receipt immediately before native prompt admission. */
+export async function admitInvocation({ baseUrl, serviceSecret, instanceId, runtimeId, scope, locator, invocationId, nativeRequestId, fetchImpl = fetch, signal }) {
+  const response = await fetchImpl(`${baseUrl.replace(/\/$/u, '')}/admit`, {
+    method: 'POST',
+    headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${serviceSecret}`, 'x-dsh-instance-id': instanceId, 'x-dsh-runtime-id': runtimeId },
+    body: JSON.stringify({ protocol_version: '1.0', request_id: randomUUID(), ...scope, ...locator, invocation_id: invocationId, native_request_id: nativeRequestId }),
+    signal,
+  })
+  const payload = await response.json().catch(() => undefined)
+  if (!response.ok) { const error = new Error(payload?.detail?.message ?? 'Memory Lab admission failed'); error.code = payload?.detail?.code ?? 'PROVIDER_UNAVAILABLE'; throw error }
+  return payload
+}
+
 export { PROVIDER }
