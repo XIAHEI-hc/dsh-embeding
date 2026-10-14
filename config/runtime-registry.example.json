@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "host_instance_id": "memorylab-local-dsh",
+  "runtimes": [
+    {
+      "subject": "USER_UUID_A_FROM_VERIFIED_CONTEXT",
+      "runtime_id": "runner-a",
+      "internal_origin": "http://dsh-user-a:8765",
+      "status": "ready"
+    },
+    {
+      "subject": "USER_UUID_B_FROM_VERIFIED_CONTEXT",
+      "runtime_id": "runner-b",
+      "internal_origin": "http://dsh-user-b:8765",
+      "status": "ready"
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import {
   newIntegrationSessionId,
   requestHash,
 } from './integration-store.js'
+import { runtimeForSubject } from './runtime-registry.js'
 
 function oneString(value, label, max = 256) {
   if (typeof value !== 'string' || value.length === 0 || value.length > max) {
@@ -19,7 +20,7 @@ function exactKeys(body, allowed) {
   }
 }
 
-async function verifyContext(config, contextId, signal) {
+async function verifyContext(config, contextId, signal, runtimeRegistry) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(new Error('verify timeout')), config.verifyTimeoutMs)
   const combined = signal === undefined ? controller.signal : AbortSignal.any([signal, controller.signal])
@@ -47,6 +48,10 @@ async function verifyContext(config, contextId, signal) {
       || !config.allowedFunctionTypes.includes(body.context.function_type)
       || typeof scopeIdentity !== 'string') {
       throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH')
+    }
+    if (runtimeRegistry !== undefined) {
+      const runtime = runtimeForSubject(runtimeRegistry, scopeIdentity)
+      return { ...body.context, runtime_id: runtime.runtimeId, runtime_origin: runtime.internalOrigin }
     }
     return body.context
   } catch (error) {
@@ -93,7 +98,7 @@ async function requireBindableSession(
   }
 }
 
-export function registerIntegrationRoutes(ctx, config, policy, findClient) {
+export function registerIntegrationRoutes(ctx, config, policy, findClient, runtimeRegistry) {
   const store = new IntegrationStore()
   const route = (path, handler) => ctx.webServer.register({ kind: 'exact', path, handler })
   const disposers = []
@@ -128,7 +133,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient) {
         writeJson(res, 200, { ...reserved.response, request_id: id })
         return
       }
-      const metadata = await verifyContext(config, contextId)
+      const metadata = await verifyContext(config, contextId, undefined, runtimeRegistry)
       const sessionId = reserved.sessionId
       if (requestedSessionId === undefined) {
         await ctx.sessionController.create({ workspaceId: workspace.workspace_id, sessionId })
@@ -176,7 +181,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient) {
       if (workspace.alias === null || !client.workspaceAliases.includes(workspace.alias)) {
         throw new WorkbenchExtensionError('EMBED_SCOPE_DENIED')
       }
-      const metadata = await verifyContext(config, contextId)
+      const metadata = await verifyContext(config, contextId, undefined, runtimeRegistry)
       await requireBindableSession(
         ctx, policy, workspaceId, sessionId, contextId, client.clientId, store, parentSessionId,
       )
@@ -194,6 +199,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient) {
         session_id: binding.sessionId,
         binding_status: binding.status,
         dsh_instance_id: binding.instanceId,
+        ...(binding.runtimeId === undefined ? {} : { runtime_id: binding.runtimeId }),
         request_id: id,
       })
     } catch (error) { writeError(res, error, id) }
@@ -232,6 +238,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient) {
         session_id: binding.sessionId,
         binding_status: binding.status,
         dsh_instance_id: binding.instanceId,
+        ...(binding.runtimeId === undefined ? {} : { runtime_id: binding.runtimeId }),
         archived: ctx.workspaceRegistry.archivedSessionIds.includes(sessionId),
         request_id: id,
       })

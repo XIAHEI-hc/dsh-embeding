@@ -45,6 +45,7 @@ export class IntegrationStore {
         client_id TEXT NOT NULL,
         dsh_instance_id TEXT NOT NULL,
         project_id TEXT NOT NULL,
+        runtime_id TEXT,
         function_type TEXT NOT NULL,
         status TEXT NOT NULL CHECK(status IN ('active', 'revoked')),
         created_at INTEGER NOT NULL,
@@ -67,6 +68,8 @@ export class IntegrationStore {
         PRIMARY KEY(client_id, request_id)
       );
     `)
+    const columns = this.db.prepare('PRAGMA table_info(integration_bindings)').all()
+    if (!columns.some(column => column.name === 'runtime_id')) this.db.exec('ALTER TABLE integration_bindings ADD COLUMN runtime_id TEXT')
     this.db.prepare(`INSERT OR IGNORE INTO integration_schema_migrations(version, applied_at)
       VALUES(1, ?)`).run(this.now())
   }
@@ -110,6 +113,7 @@ export class IntegrationStore {
       context_id: contextId,
       binding_status: 'active',
       dsh_instance_id: instanceId,
+      ...(metadata.runtime_id === undefined ? {} : { runtime_id: metadata.runtime_id }),
     }
     this.db.exec('BEGIN IMMEDIATE')
     try {
@@ -121,6 +125,7 @@ export class IntegrationStore {
         instanceId,
         projectId: scopeId(metadata),
         functionType: metadata.function_type,
+        runtimeId: metadata.runtime_id,
       })
       const updated = this.db.prepare(`UPDATE integration_prepare_requests
         SET state = 'complete', response_json = ?, error_code = NULL, updated_at = ?
@@ -154,6 +159,7 @@ export class IntegrationStore {
         instanceId,
         projectId: scopeId(metadata),
         functionType: metadata.function_type,
+        runtimeId: metadata.runtime_id,
       })
       this.db.exec('COMMIT')
       return value
@@ -163,7 +169,7 @@ export class IntegrationStore {
     }
   }
 
-  bindImmutable({ sessionId, contextId, workspaceId, clientId, instanceId, projectId, functionType }) {
+  bindImmutable({ sessionId, contextId, workspaceId, clientId, instanceId, projectId, functionType, runtimeId }) {
     const existing = this.db.prepare('SELECT * FROM integration_bindings WHERE session_id = ?').get(sessionId)
     if (existing !== undefined) {
       if (existing.context_id !== contextId || existing.workspace_id !== workspaceId
@@ -171,16 +177,16 @@ export class IntegrationStore {
         || existing.project_id !== projectId || existing.function_type !== functionType) {
         throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH')
       }
-      if (existing.status === 'revoked') throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+      if (existing.status === 'revoked' || (runtimeId !== undefined && existing.runtime_id !== runtimeId)) throw new WorkbenchExtensionError('CONTEXT_REVOKED')
       return this.binding(sessionId)
     }
     const now = this.now()
     this.db.prepare(`INSERT INTO integration_bindings(
       session_id, context_id, workspace_id, client_id, dsh_instance_id,
-      project_id, function_type, status, created_at, updated_at
-    ) VALUES(?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`).run(
+      project_id, function_type, runtime_id, status, created_at, updated_at
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`).run(
       sessionId, contextId, workspaceId, clientId, instanceId,
-      projectId, functionType, now, now,
+      projectId, functionType, runtimeId ?? null, now, now,
     )
     return this.binding(sessionId)
   }
@@ -196,6 +202,7 @@ export class IntegrationStore {
       instanceId: row.dsh_instance_id,
       projectId: row.project_id,
       functionType: row.function_type,
+      ...(row.runtime_id === null || row.runtime_id === undefined ? {} : { runtimeId: row.runtime_id }),
       status: row.status,
     }
   }

@@ -26,6 +26,7 @@ export const ERROR_DEFINITIONS = Object.freeze({
   EMBED_PROTOCOL_UNSUPPORTED: [400, false, 'upgrade_integration', '嵌入协议版本不受支持'],
   EMBED_CROSS_SITE_UNSUPPORTED: [422, false, 'use_same_site', '当前版本仅支持同站点嵌入'],
   CONFIG_INVALID: [500, false, 'fix_configuration', '工作台嵌入配置无效'],
+  RUNTIME_NOT_PROVISIONED: [409, true, 'retry', '当前用户的 DSH 运行端尚未准备'],
 })
 
 export class WorkbenchExtensionError extends Error {

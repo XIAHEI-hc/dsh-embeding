@@ -10,6 +10,7 @@ import { WorkbenchExtensionError } from './errors.js'
 import { GrantStore } from './grants.js'
 import { bearer, method, readJson, requestId, secretEqual, writeError, writeJson } from './http.js'
 import { registerIntegrationRoutes } from './integration.js'
+import { loadRuntimeRegistry } from './runtime-registry.js'
 import { WorkspacePolicy } from './workspaces.js'
 
 export const name = 'workbench-extensions'
@@ -19,10 +20,10 @@ const PROTOCOL = 'dsh.embed'
 const VERSION = '1.0'
 const BASE_CAPABILITIES = Object.freeze(['workspace_open', 'session_open', 'draft_prompt'])
 
-function capabilities(integration) {
+function capabilities(integration, multiUser = false) {
   return integration === undefined
     ? BASE_CAPABILITIES
-    : Object.freeze([...BASE_CAPABILITIES, 'integration_context', 'session_navigation_events', 'session_lifecycle_events'])
+    : Object.freeze([...BASE_CAPABILITIES, 'integration_context', 'session_navigation_events', 'session_lifecycle_events', ...(multiUser ? ['scoped_runtime'] : [])])
 }
 
 function oneString(value, label, max = 256) {
@@ -71,16 +72,21 @@ function verifyAuthenticated(connection, req) {
   throw new WorkbenchExtensionError(rejection === 401 ? 'EMBED_CLIENT_UNAUTHORIZED' : 'EMBED_ORIGIN_DENIED')
 }
 
-function registerRoutes(ctx, config, policy, store, integration) {
+function registerRoutes(ctx, config, policy, store, integration, runtimeRegistry) {
   const route = (path, handler) => ctx.webServer.register({ kind: 'exact', path, handler })
   const disposers = []
-  const advertisedCapabilities = capabilities(integration)
+  const advertisedCapabilities = capabilities(integration, runtimeRegistry !== undefined)
 
   disposers.push(route('/embed/health/ready', (req, res) => {
     const id = requestId(req)
     if (!method(req, res, ['GET', 'HEAD'])) return
     const ready = policy.ready
-    writeJson(res, ready ? 200 : 503, { status: ready ? 'ready' : 'pending', request_id: id })
+    writeJson(res, ready ? 200 : 503, {
+      status: ready ? 'ready' : 'pending',
+      runtime_mode: runtimeRegistry === undefined ? 'trusted_shared_account' : 'embedded_multi_user',
+      provisioned_runtimes: runtimeRegistry?.runtimes.filter(item => item.status === 'ready').length ?? 0,
+      request_id: id,
+    })
   }))
 
   disposers.push(route('/embed/control/grants', async (req, res) => {
@@ -225,6 +231,7 @@ export async function apply(ctx) {
     if (enabled) throw new WorkbenchExtensionError('CONFIG_INVALID', { message: '嵌入功能需要 WORKBENCH_WORKSPACE_CONFIG' })
     return
   }
+  const runtimeRegistry = embedConfig?.deploymentMode === 'embedded_multi_user' ? loadRuntimeRegistry() : undefined
   const policy = new WorkspacePolicy(ctx.workspaceRegistry, workspaceConfig)
   await policy.initialize()
 
@@ -252,8 +259,8 @@ export async function apply(ctx) {
   const store = new GrantStore(statePath)
   const integration = integrationConfig === undefined
     ? undefined
-    : registerIntegrationRoutes(ctx, integrationConfig, policy, req => findClient(embedConfig, req))
-  const disposeRoutes = registerRoutes(ctx, embedConfig, policy, store, integration)
+    : registerIntegrationRoutes(ctx, integrationConfig, policy, req => findClient(embedConfig, req), runtimeRegistry)
+  const disposeRoutes = registerRoutes(ctx, embedConfig, policy, store, integration, runtimeRegistry)
   const cleanup = setInterval(() => store.cleanup(), 60_000)
   cleanup.unref()
   ctx.effect(() => () => {

@@ -152,8 +152,15 @@ export function loadEmbedConfig(path, enabled) {
       throw new WorkbenchExtensionError('EMBED_CROSS_SITE_UNSUPPORTED')
     }
   }
-  if (input.deployment_mode !== 'trusted_shared_account') {
-    throw configError('deployment_mode 当前必须为 trusted_shared_account')
+  const deploymentMode = input.deployment_mode ?? 'trusted_shared_account'
+  if (!['trusted_shared_account', 'embedded_multi_user'].includes(deploymentMode)) {
+    throw configError('deployment_mode 必须为 trusted_shared_account 或 embedded_multi_user')
+  }
+  if (deploymentMode === 'trusted_shared_account' && process.env.WORKBENCH_INTEGRATION_MODE === 'embedded_multi_user') {
+    throw configError('WORKBENCH_INTEGRATION_MODE=embedded_multi_user 不能使用共享账户部署模式')
+  }
+  if (deploymentMode === 'embedded_multi_user' && process.env.WORKBENCH_ROLE !== 'gateway') {
+    throw configError('embedded_multi_user 必须运行在 gateway role')
   }
   if (!Array.isArray(input.clients) || input.clients.length === 0) throw configError('clients 必须是非空数组')
   const ids = new Set()
@@ -182,6 +189,7 @@ export function loadEmbedConfig(path, enabled) {
   })
   return {
     schemaVersion: 1,
+    deploymentMode,
     publicOrigin,
     allowedParentOrigins,
     ticketTtlSeconds: integer(input.ticket_ttl_seconds, 'ticket_ttl_seconds', 60, 1, 120),

@@ -10,7 +10,8 @@
     "./config": "./src/config.js",
     "./grants": "./src/grants.js",
     "./integration-store": "./src/integration-store.js",
-    "./workspaces": "./src/workspaces.js"
+    "./workspaces": "./src/workspaces.js",
+    "./runtime-registry": "./src/runtime-registry.js"
   },
   "dsh": {
     "client": {

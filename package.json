@@ -12,6 +12,7 @@
     "@deepseek-ai/dsh-client-connection": "file:vendor/official-web-forks/dsh-client-connection",
     "@dsh-workbench/probe-data-tools": "file:packages/probe-data-tools",
     "@dsh-workbench/memorylab-data-tools": "file:packages/memorylab-data-tools",
+    "@dsh-workbench/memorylab-skill-provider": "file:packages/memorylab-skill-provider",
     "@dsh-workbench/extensions": "file:packages/workbench-extensions"
   },
   "devDependencies": {
