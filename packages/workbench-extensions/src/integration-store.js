@@ -216,6 +216,12 @@ export class IntegrationStore {
     }
   }
 
+  activeBindings() {
+    return this.db.prepare(
+      "SELECT session_id FROM integration_bindings WHERE status = 'active' ORDER BY updated_at ASC",
+    ).all().map(row => this.binding(row.session_id)).filter(value => value !== undefined)
+  }
+
   requireActive(sessionId) {
     const value = this.binding(sessionId)
     if (value === undefined) throw new WorkbenchExtensionError('CONTEXT_NOT_BOUND')

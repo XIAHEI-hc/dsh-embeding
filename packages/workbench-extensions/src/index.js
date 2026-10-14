@@ -409,6 +409,36 @@ export async function apply(ctx) {
   }
   const agentSyncTimers = new WeakMap()
   const agentSyncControllers = new WeakMap()
+  const backgroundSyncInFlight = new Map()
+  const syncBoundRuntimes = async () => {
+    if (integration === undefined || integrationConfig.integrationKind !== 'memorylab') return
+    for (const binding of integration.store.activeBindings()) {
+      if (binding.runtimeId === undefined || binding.accessGrantId === undefined) continue
+      if (backgroundSyncInFlight.has(binding.sessionId)) continue
+      const controller = new AbortController()
+      backgroundSyncInFlight.set(binding.sessionId, controller)
+      void synchronizeRemoteProvider({
+        baseUrl: integrationConfig.apiOrigin,
+        serviceSecret: integrationConfig.toolSecret,
+        instanceId: integrationConfig.instanceId,
+        runtimeId: binding.runtimeId,
+        scope: {
+          context_id: binding.contextId,
+          session_id: binding.sessionId,
+          access_grant_id: binding.accessGrantId,
+        },
+        signal: controller.signal,
+      }).catch(() => {
+        // Keep the durable pending/unreachable projection; the next interval
+        // retries after the online authorization check.
+      }).finally(() => {
+        backgroundSyncInFlight.delete(binding.sessionId)
+      })
+    }
+  }
+  await syncBoundRuntimes()
+  const backgroundSync = setInterval(() => { void syncBoundRuntimes() }, 30_000)
+  backgroundSync.unref?.()
   if (integration !== undefined && integrationConfig.integrationKind === 'memorylab') {
     ctx.on('agent/created', async ({ agent, signal }) => {
       let installed
@@ -562,6 +592,9 @@ export async function apply(ctx) {
   cleanup.unref()
   ctx.effect(() => () => {
     clearInterval(cleanup)
+    clearInterval(backgroundSync)
+    for (const controller of backgroundSyncInFlight.values()) controller.abort()
+    backgroundSyncInFlight.clear()
     disposeRoutes()
     integration?.dispose()
     store.close()

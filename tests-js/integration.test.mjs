@@ -106,6 +106,28 @@ test('Memory Lab binding retains the exact login grant for provider scope', () =
   } finally { store.close(); f.close() }
 })
 
+test('active binding scan survives restart and excludes revoked sessions', () => {
+  const f = fixture()
+  const store = new IntegrationStore(f.path)
+  try {
+    store.bind({
+      clientId: 'memorylab', contextId: 'context-a', workspaceId: 'workspace-a',
+      sessionId: 'session-a', instanceId: 'dsh-a',
+      metadata: { user_id: 'user-a', function_type: 'MEMORYLAB_CHN',
+        runtime_id: 'runner-a', access_grant_id: 'grant-a' },
+    })
+    store.bind({
+      clientId: 'memorylab', contextId: 'context-b', workspaceId: 'workspace-b',
+      sessionId: 'session-b', instanceId: 'dsh-a',
+      metadata: { user_id: 'user-b', function_type: 'MEMORYLAB_CHN',
+        runtime_id: 'runner-b', access_grant_id: 'grant-b' },
+    })
+    assert.deepEqual(store.activeBindings().map(binding => binding.sessionId), ['session-a', 'session-b'])
+    assert.equal(store.revokeContext('context-a', 'memorylab'), 1)
+    assert.deepEqual(store.activeBindings().map(binding => binding.sessionId), ['session-b'])
+  } finally { store.close(); f.close() }
+})
+
 test('a failed native fork can remove only its pre-bound child binding', () => {
   const f = fixture()
   const store = new IntegrationStore(f.path)
