@@ -13,6 +13,7 @@
     "@dsh-workbench/probe-data-tools": "file:packages/probe-data-tools",
     "@dsh-workbench/memorylab-data-tools": "file:packages/memorylab-data-tools",
     "@dsh-workbench/memorylab-skill-provider": "file:packages/memorylab-skill-provider",
+    "@dsh-workbench/runtime-gateway": "file:packages/workbench-runtime-gateway",
     "@dsh-workbench/extensions": "file:packages/workbench-extensions"
   },
   "devDependencies": {
