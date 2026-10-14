@@ -94,12 +94,13 @@ function targetFor(req, registry, secret, now, maxAgeMs) {
   return { scope, runtime }
 }
 
-export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret, maxScopeAgeMs, fetchImpl = fetch }) {
+export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret, maxScopeAgeMs, liveCheckIntervalMs, fetchImpl = fetch }) {
   if (!scopeSecret || !serviceSecret) throw new Error('scopeSecret and serviceSecret are required')
   const registry = loadRuntimeRegistry(registryPath)
   const maxAge = maxScopeAgeMs ?? 8 * 60 * 60 * 1000
   const verifyOrigin = process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN
   const verifyTimeoutMs = Number(process.env.MEMORYLAB_RUNTIME_VERIFY_TIMEOUT_MS ?? 5000)
+  const liveInterval = Math.max(1000, Number(liveCheckIntervalMs ?? process.env.MEMORYLAB_RUNTIME_LIVE_CHECK_INTERVAL_MS ?? 5000))
   const handoffs = new Map()
   const server = http.createServer(async (req, res) => {
     if (req.url === '/health') return writeJson(res, 200, { status: 'ready', host_instance_id: registry.hostInstanceId })
@@ -145,7 +146,10 @@ export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret,
     if (target.error) { socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); socket.destroy(); return }
     const live = await verifyLiveScope(target.scope, target.runtime, verifyOrigin, registry.hostInstanceId, verifyTimeoutMs, fetchImpl)
     if (!live.ok) { socket.write(`HTTP/1.1 ${live.error === 'RUNTIME_UNAVAILABLE' ? 503 : 403} Forbidden\r\nConnection: close\r\n\r\n`); socket.destroy(); return }
-    proxyUpgrade(req, socket, head, target.runtime.internalOrigin, target.scope)
+    proxyUpgrade(req, socket, head, target.runtime.internalOrigin, target.scope, async () => {
+      const current = await verifyLiveScope(target.scope, target.runtime, verifyOrigin, registry.hostInstanceId, verifyTimeoutMs, fetchImpl)
+      return current.ok
+    }, liveInterval)
   })
   return { server, registry }
 }
@@ -172,7 +176,7 @@ function proxyHttp(req, res, origin, scope) {
   req.pipe(upstream)
 }
 
-function proxyUpgrade(req, socket, head, origin, scope) {
+function proxyUpgrade(req, socket, head, origin, scope, verify, liveInterval) {
   const target = new URL(req.url ?? '/', origin)
   const upstream = http.request({ protocol: target.protocol, hostname: target.hostname, port: target.port, path: `${target.pathname}${target.search}`, method: 'GET', headers: { ...proxyHeaders(req, scope, { internalOrigin: origin, runtimeId: scope.runtime_id }), connection: 'Upgrade' } })
   upstream.on('upgrade', (response, upstreamSocket, upstreamHead) => {
@@ -180,6 +184,24 @@ function proxyUpgrade(req, socket, head, origin, scope) {
     if (upstreamHead.length) socket.write(upstreamHead)
     if (head.length) upstreamSocket.write(head)
     upstreamSocket.pipe(socket).pipe(upstreamSocket)
+    let checking = false
+    const timer = setInterval(() => {
+      if (checking || socket.destroyed || upstreamSocket.destroyed) return
+      checking = true
+      Promise.resolve(verify()).then(ok => {
+        if (!ok) {
+          socket.destroy()
+          upstreamSocket.destroy()
+        }
+      }).catch(() => {
+        socket.destroy()
+        upstreamSocket.destroy()
+      }).finally(() => { checking = false })
+    }, liveInterval)
+    timer.unref?.()
+    const cleanup = () => clearInterval(timer)
+    socket.once('close', cleanup)
+    upstreamSocket.once('close', cleanup)
   })
   upstream.on('error', () => socket.destroy())
   upstream.end()
