@@ -9,7 +9,7 @@
 
 | 范围 | 证据 |
 |---|---|
-| DSH 扩展回归 | `npm run test:extensions`：42/42 通过；包含 live Memory Lab lease verify、延迟 provider 注册、fork rollback 和重启后 active binding 扫描。 |
+| DSH 扩展回归 | `npm run test:extensions`：43/43 通过；包含 live Memory Lab lease verify、延迟 provider 注册、fork rollback、重启后 active binding 扫描和 usage outbox 重启恢复/稳定 event id 去重。 |
 | Memory Lab 后端回归 | `PYTHONPATH=backend; python -m pytest -q backend/tests`：66/66 通过；覆盖 context/login revoke 后 terminal usage 以及同 `event_id` 的完整业务 payload replay 冲突；Windows 退出清理阶段的 SQLite `WinError 32` 不影响 pytest 返回码 0。 |
 | Memory Lab 前端 | `npm run typecheck`、`npm run build` 均通过（既有验收记录）。 |
 | 协议契约 | DevPack `python acceptance/check_contracts.py`：6 个合法示例通过，2 个伪造 scope 被拒绝。脚本已显式使用 UTF-8，避免 Windows GBK 环境误报。 |
@@ -28,6 +28,7 @@
 | scoped runtime credential fence | `AI_DSH_REQUIRE_SCOPED_RUNTIME=true` 时，全局 control secret 不再能用于带 runtime ID 的 runtime data-plane 请求；只有对应 runner credential 能通过，真实 runner-a catalog 仍返回 200。 |
 | queued skill terminal fact | queued `/ml-*` 在切版、停用、revoke 或正文加载失败时，会消费对应 admission queue 并写 `failed`/`cancelled` usage 终态，不再遗留 `admitted`。 |
 | terminal usage after revoke | 已准入 receipt 在 context、login grant 或权限撤销后仍可通过窄权限路径写入 `completed`/`failed`/`cancelled`；目录、resolve、admit 仍拒绝；同 `event_id` 改变 occurred_at/error_code/turn_ref 会返回 `IDEMPOTENCY_CONFLICT`。 |
+| usage outbox recovery | DSH integration SQLite 持久化脱敏 usage payload；broker 暂时失败会以相同 `event_id` 重试，重启后仍可 drain；终态 phase 冲突不会永久阻塞队列。 |
 | 跨 runtime 拒绝 | B 使用 A 的 context/session/grant 重放 catalog、resolve、admit、usage、ack 均得到 `403 SCOPE_DENIED`。 |
 | live revoke | logout 前旧 scope cookie 访问带 channel 的 embed 为 200；logout 后同一 cookie 为 403。无 scope cookie 的 embed/API 请求为 401。 |
 | 同浏览器换用户 | Memory Lab logout 清除 `dsh.embed.pending.v1` sessionStorage；下一用户不会继承上一用户的 iframe handoff，HttpOnly scope cookie 由新 bootstrap 替换。 |
