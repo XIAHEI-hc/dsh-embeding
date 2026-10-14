@@ -80,28 +80,41 @@ export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret,
     }
     const target = targetFor(req, registry, scopeSecret, Date.now())
     if (target.error) return writeJson(res, target.error === 'AUTH_REQUIRED' ? 401 : 403, { error: { code: target.error } })
-    return proxyHttp(req, res, target.runtime.internalOrigin)
+    return proxyHttp(req, res, target.runtime.internalOrigin, target.scope)
   })
   server.on('upgrade', (req, socket, head) => {
     const target = targetFor(req, registry, scopeSecret, Date.now())
     if (target.error) { socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); socket.destroy(); return }
-    proxyUpgrade(req, socket, head, target.runtime.internalOrigin)
+    proxyUpgrade(req, socket, head, target.runtime.internalOrigin, target.scope)
   })
   return { server, registry }
 }
 
-function proxyHttp(req, res, origin) {
+function proxyHeaders(req, scope, runtime) {
+  const { cookie: _cookie, ...incoming } = req.headers
+  return {
+    ...incoming,
+    host: new URL(runtime.internalOrigin).host,
+    'x-dsh-runtime-id': runtime.runtimeId,
+    'x-dsh-scope-subject': scope.subject,
+    ...(scope.context_id === undefined ? {} : { 'x-dsh-scope-context-id': scope.context_id }),
+    ...(scope.session_id === undefined ? {} : { 'x-dsh-scope-session-id': scope.session_id }),
+    ...(scope.access_grant_id === undefined ? {} : { 'x-dsh-access-grant-id': scope.access_grant_id }),
+  }
+}
+
+function proxyHttp(req, res, origin, scope) {
   const target = new URL(req.url ?? '/', origin)
-  const upstream = http.request({ protocol: target.protocol, hostname: target.hostname, port: target.port, path: `${target.pathname}${target.search}`, method: req.method, headers: { ...req.headers, host: target.host, cookie: undefined } }, response => {
+  const upstream = http.request({ protocol: target.protocol, hostname: target.hostname, port: target.port, path: `${target.pathname}${target.search}`, method: req.method, headers: proxyHeaders(req, scope, { internalOrigin: origin, runtimeId: scope.runtime_id }) }, response => {
     res.writeHead(response.statusCode ?? 502, response.headers); response.pipe(res)
   })
   upstream.on('error', error => { if (!res.headersSent) writeJson(res, 502, { error: { code: 'RUNTIME_UNAVAILABLE', message: error.message } }); else res.destroy(error) })
   req.pipe(upstream)
 }
 
-function proxyUpgrade(req, socket, head, origin) {
+function proxyUpgrade(req, socket, head, origin, scope) {
   const target = new URL(req.url ?? '/', origin)
-  const upstream = http.request({ protocol: target.protocol, hostname: target.hostname, port: target.port, path: `${target.pathname}${target.search}`, method: 'GET', headers: { ...req.headers, host: target.host, cookie: undefined, connection: 'Upgrade' } })
+  const upstream = http.request({ protocol: target.protocol, hostname: target.hostname, port: target.port, path: `${target.pathname}${target.search}`, method: 'GET', headers: { ...proxyHeaders(req, scope, { internalOrigin: origin, runtimeId: scope.runtime_id }), connection: 'Upgrade' } })
   upstream.on('upgrade', (response, upstreamSocket, upstreamHead) => {
     socket.write(`HTTP/1.1 101 Switching Protocols\r\n${Object.entries(response.headers).filter(([key]) => key !== 'connection').map(([key, value]) => `${key}: ${value}`).join('\r\n')}\r\n\r\n`)
     if (upstreamHead.length) socket.write(upstreamHead)
