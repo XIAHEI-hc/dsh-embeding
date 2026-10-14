@@ -43,12 +43,14 @@ Client 插件必须等待官方 workspace controller snapshot。直接在首次�
 
 位置：`vendor/official-web-forks/dsh-api-session-controller`。
 
-基于上游 `packages/api/session-controller`，只增加两个 Cordis waterfall admission：
+基于上游 `packages/api/session-controller`，只增加三个与集成授权相关的 Cordis waterfall：
 
 - `api-session/create-admission`：位于 session ID/Agent/durable state 创建之前；
+- `api-session/fork-admission`：位于 fork child ID 生成之后、`agents.create()` 持久化之前；
+- `api-session/fork-failed`：native fork 持久化失败时回滚尚未物化的 child binding；
 - `api-session/prompt-admission`：位于 Agent 恢复和用户内容落盘之前。
 
-需要此 fork 是因为仅在 `agent/pre-step` 检查太晚，无法保证 `preview_only` 或失效目录不会先产生 durable mutation。扩展继续保留 `agent/pre-step` 作为执行时二次检查。
+需要此 fork 是因为仅在 `agent/pre-step` 检查太晚，无法保证 `preview_only`、失效目录或未完成 owner binding 不会先产生 durable mutation。扩展继续保留 `agent/pre-step` 作为执行时二次检查。
 
 两个 fork 的 `package.json` 都包含 `workbenchFork.upstreamTag`、`upstreamCommit` 和 `purpose`。根 `package.json` 通过 npm `file:` 依赖替换精确包，Dockerfile 在依赖安装前后复制源目录，避免最终阶段出现悬空 symlink。
 
