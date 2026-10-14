@@ -24,6 +24,7 @@
     "dev:extensions": "node --watch scripts/check-extensions.mjs",
     "test:extensions": "node --test tests-js/*.test.mjs",
     "test:embed": "node scripts/embed-smoke.cjs",
-    "test:probe-integration": "node scripts/probe-integration-smoke.cjs"
+    "test:probe-integration": "node scripts/probe-integration-smoke.cjs",
+    "runtime-gateway": "node scripts/runtime-gateway.mjs"
   }
 }
