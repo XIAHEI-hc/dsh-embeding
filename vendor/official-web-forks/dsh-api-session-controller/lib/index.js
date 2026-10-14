@@ -815,8 +815,8 @@ var SessionCommandController = class {
 				workspaceId: workspace?.id,
 				atSeq: boundary
 			}, () => Promise.resolve());
-			const composition = await this.agents.composeAgent(this.agents.presetForObservation(source));
 			try {
+				const composition = await this.agents.composeAgent(this.agents.presetForObservation(source));
 				const { provider, model } = this.ctx.agentDefaultModel.currentSelection();
 				await this.ctx.agents.create({
 					sessionId: childId,
