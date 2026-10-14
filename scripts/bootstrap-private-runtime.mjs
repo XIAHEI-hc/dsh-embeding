@@ -55,8 +55,10 @@ await put('gateway.env', [
   `WORKBENCH_SCOPE_COOKIE_SECRET=${scopeSecret}`,
   `WORKBENCH_GATEWAY_SERVICE_SECRET=${gatewayServiceSecret}`,
 ].join('\n'))
+const runtimeSecrets = {}
 for (const [name, runtime] of [['runner-a', 'runner-a'], ['runner-b', 'runner-b']]) {
   const runnerSecret = secret()
+  runtimeSecrets[runtime] = runnerSecret
   await put(`${name}/runner-client-secret`, runnerSecret)
   await put(`${name}/workspace.json`, workspaceConfig(), 0o644)
   await put(`${name}/embed.json`, embedConfig(), 0o644)
@@ -64,7 +66,10 @@ for (const [name, runtime] of [['runner-a', 'runner-a'], ['runner-b', 'runner-b'
     'WORKBENCH_ROLE=runner',
     'WORKBENCH_INTEGRATION_MODE=embedded_multi_user',
     'WORKBENCH_EMBED_ENABLED=true',
-    'MEMORYLAB_AI_INTEGRATION_ENABLED=false',
+    'MEMORYLAB_AI_INTEGRATION_ENABLED=true',
+    `MEMORYLAB_AI_API_ORIGIN=${apiOrigin}`,
+    `MEMORYLAB_AI_DSH_INSTANCE_ID=${registry.host_instance_id}`,
+    `MEMORYLAB_AI_RUNTIME_SECRET_FILE=/private/runner-client-secret`,
     'WORKBENCH_PUBLIC_URL=http://dsh-gateway:8765',
     'WORKBENCH_DATA_DIR=/data',
     'DSH_HOME=/data/dsh-home',
@@ -77,4 +82,5 @@ for (const [name, runtime] of [['runner-a', 'runner-a'], ['runner-b', 'runner-b'
     `DSH_RUNTIME_ID=${runtime}`,
   ].join('\n'))
 }
+await put('runtime-secrets.json', JSON.stringify(runtimeSecrets, null, 2), 0o600)
 console.log(JSON.stringify({ root, users: { a: userA, b: userB }, api_origin: apiOrigin, generated: true }, null, 2))

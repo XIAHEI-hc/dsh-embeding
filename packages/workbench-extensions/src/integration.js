@@ -30,6 +30,7 @@ async function verifyContext(config, contextId, signal, runtimeRegistry, accessG
         accept: 'application/json',
         authorization: `Bearer ${config.toolSecret}`,
         'x-dsh-instance-id': config.instanceId,
+        ...(config.runtimeId === undefined ? {} : { 'x-dsh-runtime-id': config.runtimeId }),
         ...(accessGrantId === undefined ? {} : { 'x-dsh-access-grant-id': accessGrantId }),
       },
       method: 'GET',
