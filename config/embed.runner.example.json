@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "public_origin": "http://dsh-gateway:8765",
+  "allowed_parent_origins": ["http://memorylab-frontend:7890"],
+  "ready_timeout_ms": 15000,
+  "init_timeout_ms": 30000,
+  "deployment_mode": "private_runner",
+  "clients": [
+    {
+      "client_id": "gateway",
+      "secret_file": "/private/runner-client-secret",
+      "allowed_parent_origins": ["http://memorylab-frontend:7890"],
+      "workspace_aliases": ["private-memory-lab"],
+      "mode": "read_write"
+    }
+  ]
+}

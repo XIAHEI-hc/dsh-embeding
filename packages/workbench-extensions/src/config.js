@@ -153,14 +153,17 @@ export function loadEmbedConfig(path, enabled) {
     }
   }
   const deploymentMode = input.deployment_mode ?? 'trusted_shared_account'
-  if (!['trusted_shared_account', 'embedded_multi_user'].includes(deploymentMode)) {
-    throw configError('deployment_mode 必须为 trusted_shared_account 或 embedded_multi_user')
+  if (!['trusted_shared_account', 'embedded_multi_user', 'private_runner'].includes(deploymentMode)) {
+    throw configError('deployment_mode 必须为 trusted_shared_account、embedded_multi_user 或 private_runner')
   }
   if (deploymentMode === 'trusted_shared_account' && process.env.WORKBENCH_INTEGRATION_MODE === 'embedded_multi_user') {
     throw configError('WORKBENCH_INTEGRATION_MODE=embedded_multi_user 不能使用共享账户部署模式')
   }
   if (deploymentMode === 'embedded_multi_user' && process.env.WORKBENCH_ROLE !== 'gateway') {
     throw configError('embedded_multi_user 必须运行在 gateway role')
+  }
+  if (deploymentMode === 'private_runner' && process.env.WORKBENCH_ROLE !== 'runner') {
+    throw configError('private_runner 必须运行在 runner role')
   }
   if (!Array.isArray(input.clients) || input.clients.length === 0) throw configError('clients 必须是非空数组')
   const ids = new Set()

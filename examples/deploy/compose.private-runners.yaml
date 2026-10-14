@@ -1,0 +1,68 @@
+# Multi-user runtime topology. This file is an override/template: fill the
+# private registry, credentials and runner env files on the deployment host.
+# The gateway is the only public service; runners have no published ports.
+services:
+  dsh-gateway:
+    build: ../..
+    command: ["npm", "run", "runtime-gateway"]
+    env_file: ./private/gateway.env
+    volumes:
+      - type: bind
+        source: ./private/runtime-registry.json
+        target: /private/runtime-registry.json
+        read_only: true
+    ports:
+      - "127.0.0.1:${DSH_GATEWAY_PORT:-8765}:8765"
+    networks: [dsh-internal]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  dsh-user-a:
+    build: ../..
+    env_file: ./private/runner-a.env
+    volumes:
+      - user-a-data:/data
+      - user-a-work:/workdir
+      - type: bind
+        source: ./private/runner-a
+        target: /private
+        read_only: true
+      - type: bind
+        source: ${MEMORYLAB_SEED_DIR:?set read-only seed directory}
+        target: /seed
+        read_only: true
+    networks: [dsh-internal]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+  dsh-user-b:
+    build: ../..
+    env_file: ./private/runner-b.env
+    volumes:
+      - user-b-data:/data
+      - user-b-work:/workdir
+      - type: bind
+        source: ./private/runner-b
+        target: /private
+        read_only: true
+      - type: bind
+        source: ${MEMORYLAB_SEED_DIR:?set read-only seed directory}
+        target: /seed
+        read_only: true
+    networks: [dsh-internal]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+
+volumes:
+  user-a-data:
+  user-a-work:
+  user-b-data:
+  user-b-work:
+
+networks:
+  dsh-internal:
+    external: true
+    name: ${DSH_INTERNAL_NETWORK:?set private bridge network}
