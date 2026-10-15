@@ -53,6 +53,24 @@ test('provider invalidates native cache when fixed locator generation changes', 
   assert.equal(invalidations, 2)
 })
 
+test('provider does not invalidate when catalog row order changes', async () => {
+  let reversed = false
+  let invalidations = 0
+  const rows = [
+    { desired_enabled: true, ack_status: 'installed', runtime_name: 'ml-a-v1', display_name: 'A', version: '1.0.0', description: 'a', activation_id: 'a', version_id: 'va', generation: 1, archive_sha256: 'a'.repeat(64) },
+    { desired_enabled: true, ack_status: 'installed', runtime_name: 'ml-b-v1', display_name: 'B', version: '1.0.0', description: 'b', activation_id: 'b', version_id: 'vb', generation: 1, archive_sha256: 'b'.repeat(64) },
+  ]
+  const provider = createRemoteProvider({
+    baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope,
+    control: { invalidate() { invalidations += 1 } },
+    fetchImpl: async (url) => ({ ok: true, json: async () => url.endsWith('/catalog') ? { items: reversed ? [...rows].reverse() : rows } : {} }),
+  })
+  await provider.list()
+  reversed = true
+  await provider.list()
+  assert.equal(invalidations, 1)
+})
+
 test('provider rejects malformed locators before contacting the broker', async () => {
   let requests = 0
   const provider = createRemoteProvider({
