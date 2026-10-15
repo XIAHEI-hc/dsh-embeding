@@ -21,7 +21,7 @@ services:
         read_only: true
     ports:
       - "127.0.0.1:${DSH_GATEWAY_PORT:-8875}:8765"
-    networks: [dsh-internal]
+    networks: [dsh-internal, memorylab-internal]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
@@ -70,3 +70,8 @@ networks:
   dsh-internal:
     external: true
     name: ${DSH_INTERNAL_NETWORK:?set private bridge network}
+  # The trusted gateway verifier and Memory Lab backend share this private
+  # control network. Runners remain reachable only through dsh-internal.
+  memorylab-internal:
+    external: true
+    name: ${MEMORYLAB_DOCKER_NETWORK:-memorylab-internal}
