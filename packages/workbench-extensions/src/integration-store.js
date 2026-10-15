@@ -221,7 +221,20 @@ export class IntegrationStore {
         || existing.project_id !== projectId || existing.function_type !== functionType) {
         throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH')
       }
-      if (existing.status === 'revoked' || (runtimeId !== undefined && existing.runtime_id !== runtimeId)) throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+      if (existing.status === 'revoked') {
+        if (accessGrantId === undefined || accessGrantId === existing.access_grant_id) {
+          throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+        }
+        // A revoked binding may be reopened for a fresh login grant only
+        // after all immutable identity fields above have matched. This keeps
+        // logout/re-login usable without allowing an active browser to take
+        // over another browser's binding.
+        this.db.prepare(`UPDATE integration_bindings
+          SET access_grant_id = ?, status = 'active', updated_at = ?
+          WHERE session_id = ? AND status = 'revoked'`).run(accessGrantId, this.now(), sessionId)
+        return this.binding(sessionId)
+      }
+      if (runtimeId !== undefined && existing.runtime_id !== runtimeId) throw new WorkbenchExtensionError('CONTEXT_REVOKED')
       if ((existing.page_surface_id ?? undefined) !== surface.pageSurfaceId
         || (existing.page_conversation_slot ?? undefined) !== surface.conversationSlot
         || (existing.page_kind ?? undefined) !== surface.pageKind
