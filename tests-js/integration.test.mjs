@@ -6,7 +6,7 @@ import test from 'node:test'
 
 import { isBindableInspection } from '../packages/workbench-extensions/src/integration.js'
 import { verifySessionContext } from '../packages/workbench-extensions/src/integration.js'
-import { durableUsagePayload, recordUsageDurably } from '../packages/workbench-extensions/src/index.js'
+import { durableUsagePayload, drainUsageOutbox, recordUsageDurably } from '../packages/workbench-extensions/src/index.js'
 import { normalizePageSurface } from '../packages/workbench-extensions/src/page-surface.js'
 import { IntegrationStore, requestHash } from '@dsh-workbench/extensions/integration-store'
 
@@ -319,6 +319,26 @@ test('successful usage delivery removes the exact durable event from the outbox'
   assert.equal(delivered.length, 1)
   assert.match(delivered[0], /^[0-9a-f-]{36}$/u)
   assert.deepEqual(enqueued, [])
+})
+
+test('permanent usage scope failures purge stale outbox events', async (t) => {
+  const f = fixture()
+  const store = new IntegrationStore(f.path)
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    error: { code: 'CONTEXT_REVOKED', message: '授权已撤销' },
+  }), { status: 403, headers: { 'content-type': 'application/json' } })
+  t.after(() => { globalThis.fetch = originalFetch; store.close(); f.close() })
+  store.enqueueUsage('revoked-event', {
+    scope: { context_id: 'context-a', session_id: 'session-a', access_grant_id: 'old-grant' },
+    locator: { activation_id: 'activation-a', version_id: 'version-a', generation: 1, archive_sha256: 'a'.repeat(64) },
+    invocationId: 'invocation-a', nativeRequestId: 'native-a', phase: 'completed',
+  })
+  await drainUsageOutbox({ store }, {
+    integrationKind: 'memorylab', apiOrigin: 'http://memorylab.test',
+    toolSecret: 's'.repeat(32), instanceId: 'instance-a',
+  })
+  assert.deepEqual(store.pendingUsage(), [])
 })
 
 test('Memory Lab session status verifier binds context, session, grant, and instance', async () => {

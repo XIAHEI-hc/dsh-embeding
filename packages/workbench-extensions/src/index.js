@@ -127,7 +127,7 @@ export async function recordUsageDurably(integration, config, payload, { signal,
   }
 }
 
-async function drainUsageOutbox(integration, config) {
+export async function drainUsageOutbox(integration, config) {
   if (integration === undefined || config.integrationKind !== 'memorylab') return
   for (const item of integration.store.pendingUsage()) {
     try {
@@ -140,7 +140,11 @@ async function drainUsageOutbox(integration, config) {
       // A transient broker/authorization failure must remain durable.  The
       // next synchronizer tick retries with the same event_id.  Invalid
       // phase transitions are permanent and would otherwise poison the queue.
-      if (error?.code === 'USAGE_TERMINAL' || error?.code === 'USAGE_PHASE_INVALID') {
+      // These responses are authoritative permanent outcomes for the exact
+      // event. Retrying an old scope after revoke or replay conflict would
+      // retain stale grant payloads forever and cannot become valid later.
+      if (['USAGE_TERMINAL', 'USAGE_PHASE_INVALID', 'SCOPE_DENIED',
+        'CONTEXT_REVOKED', 'IDEMPOTENCY_CONFLICT'].includes(error?.code)) {
         integration.store.markUsageDelivered(item.eventId)
       } else {
         integration.store.rescheduleUsage(item.eventId)
