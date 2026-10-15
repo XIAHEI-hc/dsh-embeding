@@ -36,7 +36,7 @@
 | latest deployment | 通过 WSL2 Ubuntu Docker 重建并强制重启 `dsh-gateway`、`dsh-user-a`、`dsh-user-b`；三者 healthy/running，A/B 仍分别挂载 `dsh-workbench_user-a-data` 与 `dsh-workbench_user-b-data`，未执行 `down -v`。Memory Lab backend/frontend 亦已重建/运行。 |
 | 跨 runtime 拒绝 | B 使用 A 的 context/session/grant 重放 catalog、resolve、admit、usage、ack 均得到 `403 SCOPE_DENIED`。 |
 | live revoke | logout 前旧 scope cookie 访问带 channel 的 embed 为 200；logout 后同一 cookie 为 403。无 scope cookie 的 embed/API 请求为 401。 |
-| 同浏览器换用户 | Memory Lab logout 清除 `dsh.embed.pending.v1` sessionStorage；下一用户不会继承上一用户的 iframe handoff，HttpOnly scope cookie 由新 bootstrap 替换；同一 native session 的 active binding 不允许原地替换 access grant，明确 revoked 后才允许同身份新 grant 重绑。 |
+| 同浏览器换用户 | Memory Lab logout 清除 `dsh.embed.pending.v1` sessionStorage；下一用户不会继承上一用户的 iframe handoff，HttpOnly scope cookie 由新 bootstrap 替换；同一 native session 的 active binding 不允许原地替换 access grant，只有 live verify 确认旧 grant 已 revoked/expired 后才允许同身份新 grant 重绑。 |
 | CHN 权限边界 | runtime bridge 现在额外要求 `chn_vis:use`；即使拥有 `ai_workbench:use`，没有 CHN 权限的用户也不能 query/upload。新增测试覆盖。 |
 | WebSocket live fence | gateway 在升级成功后按 live-check interval 重新验证 Memory Lab lease，失效时销毁浏览器与 runner 两端 socket。 |
 | WebSocket gateway handshake | 现场原始握手曾返回 `101` 但遗漏 `Connection: Upgrade`，浏览器因此反复断线；修复转发头后，真实网关握手返回 `101`、`Upgrade: websocket`、`Connection: Upgrade`，Node WebSocket 客户端保持连接并通过 6 秒 live-check。 |
