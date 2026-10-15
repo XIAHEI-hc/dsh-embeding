@@ -8,6 +8,14 @@ from __future__ import annotations
 
 import json
 import os
+
+MEMORYLAB_BASE = os.environ.get("MEMORYLAB_BASE", "http://127.0.0.1:9000").rstrip("/")
+DSH_GATEWAY = os.environ.get("DSH_GATEWAY", "http://127.0.0.1:8875").rstrip("/")
+BROWSER_ORIGIN = os.environ.get("ACCEPTANCE_BROWSER_ORIGIN", "http://localhost:7891").rstrip("/")
+
+
+def endpoint(base: str, path: str) -> str:
+    return base.rstrip("/") + "/" + path.lstrip("/")
 import sys
 
 

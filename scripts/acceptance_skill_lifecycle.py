@@ -10,9 +10,9 @@ import uuid
 from datetime import datetime, timezone
 
 import requests
-from acceptance_prereq import require_acceptance_credentials
+from acceptance_prereq import BROWSER_ORIGIN, MEMORYLAB_BASE, require_acceptance_credentials
 
-BASE = os.environ.get("MEMORYLAB_BASE", "http://127.0.0.1:9000")
+BASE = MEMORYLAB_BASE
 RUNTIME = os.environ.get("RUNTIME_ID", "runner-a")
 INSTANCE = os.environ.get("DSH_INSTANCE_ID", "memorylab-local-dsh")
 
@@ -24,7 +24,7 @@ def login():
         "password": os.environ["ACCEPTANCE_USER_A_PASSWORD"],
     })
     r.raise_for_status()
-    s.headers.update({"Origin": "http://localhost:7891", "X-CSRF-Token": s.cookies["ml_csrf"]})
+    s.headers.update({"Origin": BROWSER_ORIGIN, "X-CSRF-Token": s.cookies["ml_csrf"]})
     bootstrap = s.post(BASE + "/api/ai/bootstrap", json={"request_id": str(uuid.uuid4())})
     bootstrap.raise_for_status()
     return s, bootstrap.json()

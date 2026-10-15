@@ -7,10 +7,10 @@ import uuid
 
 import requests
 import websockets
-from acceptance_prereq import require_acceptance_credentials
+from acceptance_prereq import BROWSER_ORIGIN, DSH_GATEWAY, MEMORYLAB_BASE, require_acceptance_credentials
 
-ML = "http://127.0.0.1:9000"
-GW = "http://127.0.0.1:8875"
+ML = MEMORYLAB_BASE
+GW = DSH_GATEWAY
 
 
 async def main_async():
@@ -21,7 +21,7 @@ async def main_async():
         "password": os.environ["ACCEPTANCE_USER_A_PASSWORD"],
     })
     login.raise_for_status()
-    session.headers.update({"Origin": "http://localhost:7891", "X-CSRF-Token": session.cookies["ml_csrf"]})
+    session.headers.update({"Origin": BROWSER_ORIGIN, "X-CSRF-Token": session.cookies["ml_csrf"]})
     bootstrap = session.post(ML + "/api/ai/bootstrap", json={"request_id": str(uuid.uuid4())})
     bootstrap.raise_for_status()
     bootstrap_body = bootstrap.json()
@@ -38,7 +38,7 @@ async def main_async():
     close_reason = None
     async with websockets.connect(
         "ws://127.0.0.1:8875/api/remote.mux",
-        origin="http://localhost:7891",
+        origin=BROWSER_ORIGIN,
         additional_headers={"Cookie": f"dsh_scope={scope_cookie}"},
         open_timeout=15,
         ping_interval=None,

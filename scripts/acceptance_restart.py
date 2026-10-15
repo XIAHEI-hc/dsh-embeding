@@ -10,10 +10,10 @@ import time
 import uuid
 
 import requests
-from acceptance_prereq import require_acceptance_credentials
+from acceptance_prereq import BROWSER_ORIGIN, DSH_GATEWAY, MEMORYLAB_BASE, require_acceptance_credentials
 
-ML = "http://127.0.0.1:9000"
-GW = "http://127.0.0.1:8875"
+ML = MEMORYLAB_BASE
+GW = DSH_GATEWAY
 
 
 def docker(*args):
@@ -72,7 +72,7 @@ def login_and_bootstrap():
         "password": os.environ["ACCEPTANCE_USER_A_PASSWORD"],
     })
     response.raise_for_status()
-    session.headers.update({"Origin": "http://localhost:7891", "X-CSRF-Token": session.cookies["ml_csrf"]})
+    session.headers.update({"Origin": BROWSER_ORIGIN, "X-CSRF-Token": session.cookies["ml_csrf"]})
     response = session.post(ML + "/api/ai/bootstrap", json={"request_id": str(uuid.uuid4())})
     response.raise_for_status()
     return session, response.json()

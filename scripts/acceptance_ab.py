@@ -2,12 +2,12 @@ import json
 import os
 import uuid
 import requests
-from acceptance_prereq import require_acceptance_credentials
+from acceptance_prereq import BROWSER_ORIGIN, DSH_GATEWAY, MEMORYLAB_BASE, endpoint, require_acceptance_credentials
 
-BASE = "http://127.0.0.1:9000"
+BASE = MEMORYLAB_BASE
 
 def call(s, method, path, body=None):
-    headers = {"Accept": "application/json", "Origin": "http://localhost:7891"}
+    headers = {"Accept": "application/json", "Origin": BROWSER_ORIGIN}
     if body is not None:
         headers["X-CSRF-Token"] = s.cookies.get("ml_csrf", "")
     r = s.request(method, BASE + path, json=body, headers=headers)
@@ -18,7 +18,7 @@ def call(s, method, path, body=None):
     return r.status_code, value
 
 def redeem_scope(s, ticket):
-    r = s.get("http://127.0.0.1:8875/scope/redeem", params={"ticket": ticket}, allow_redirects=False)
+    r = s.get(endpoint(DSH_GATEWAY, "/scope/redeem"), params={"ticket": ticket}, allow_redirects=False)
     return r.status_code, r.headers.get("location"), r.headers.get("set-cookie", "")
 
 def login(username, password):

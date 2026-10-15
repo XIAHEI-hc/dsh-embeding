@@ -12,10 +12,10 @@ import uuid
 
 import requests
 import websockets
-from acceptance_prereq import require_acceptance_credentials
+from acceptance_prereq import BROWSER_ORIGIN, DSH_GATEWAY, MEMORYLAB_BASE, require_acceptance_credentials
 
-ML = os.environ.get("MEMORYLAB_BASE", "http://127.0.0.1:9000")
-GW = os.environ.get("DSH_GATEWAY", "http://127.0.0.1:8875")
+ML = MEMORYLAB_BASE
+GW = DSH_GATEWAY
 WS = GW.replace("http://", "ws://").replace("https://", "wss://") + "/api/remote.mux"
 
 
@@ -23,7 +23,7 @@ def login(username: str, password: str):
     session = requests.Session()
     response = session.post(ML + "/api/auth/login", json={"username": username, "password": password})
     response.raise_for_status()
-    session.headers.update({"Origin": "http://localhost:7891", "X-CSRF-Token": session.cookies["ml_csrf"]})
+    session.headers.update({"Origin": BROWSER_ORIGIN, "X-CSRF-Token": session.cookies["ml_csrf"]})
     bootstrap = session.post(ML + "/api/ai/bootstrap", json={"request_id": str(uuid.uuid4())})
     bootstrap.raise_for_status()
     scope = bootstrap.json()
@@ -41,7 +41,7 @@ async def remote_call(cookie: str, endpoint: str, args: dict):
     values = []
     async with websockets.connect(
         WS,
-        origin="http://localhost:7891",
+        origin=BROWSER_ORIGIN,
         additional_headers={"Cookie": f"dsh_scope={cookie}"},
         open_timeout=15,
         ping_interval=None,
