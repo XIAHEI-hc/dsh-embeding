@@ -58,7 +58,7 @@
 
 - ISO-09 至 ISO-12 的完整 create/fork、浏览器切换、旧 cookie 和生命周期矩阵。
 - ISO-13 WS 已连接时撤销/禁用的浏览器实测。
-- 浏览器现场尝试：修复网关 WebSocket 握手头并注入 agent `skills` 后，Codex IAB 新标签页已真实加载官方 DSH iframe，显示 `Private Memory Lab` 工作区会话树和可用输入框；Codex IAB 当前仍无法可靠点击跨 iframe 的“继续”按钮或向 iframe 编辑器发送文本，因此尚未取得可复核的 native `initialized` 事件、官方 `/` 技能菜单、真实模型发送和 CHN 工具调用，不计入完整浏览器 PASS。此前的 `WORKSPACE_NOT_FOUND` 和 `skills without inject` 均已定位并修复，不能把当前 UI 可见性当成完整验收。
+- 浏览器现场尝试：修复网关 WebSocket 握手头并注入 agent `skills` 后，真实 Chromium 已加载官方 DSH iframe；在 slash 输入触发后，官方原生技能菜单实际列出了固定 runtime names `ml-knowledge-cleanup-assistant-v0-9-0-h03c69c545e6c` 与 `ml-runtime-probe-35a513fa79-v1-0-0-hd613cd823c98`，说明 `skills/list` 已从当前 live agent scope 返回 Memory Lab catalog。当前 DSH 首次使用仍弹出“添加一个 API Key”模型配置遮罩，阻止可复核的菜单点击和真实发送；Codex IAB 也无法可靠执行跨 iframe 交互，因此尚未取得固定 skill 选中、native `initialized` 事件、真实模型发送和 CHN 工具调用，不计入完整浏览器 PASS。此前的 `WORKSPACE_NOT_FOUND` 和 `skills without inject` 均已定位并修复，不能把当前 UI 可见性或 catalog 列表当成完整验收。
 - SKL-05 真实模型收到指定 hash instruction 并完成 CHN 工具调用；当前已验证 receipt/usage 链路，未声称模型质量通过。
 - SKL-09 至 SKL-17 的现场切版、断连缓存、排队停用、terminal usage 和多 `/ml-*` 提交矩阵。
 - REC-01 gateway/runner 重启恢复、REG-01 独立 DSH 回归、PRO-03 单边升级/停机、OPS-01 回滚覆盖。
