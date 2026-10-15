@@ -49,7 +49,10 @@ def runtime_call(secret, path, body):
 def main():
     require_acceptance_credentials("ACCEPTANCE_USER_A_PASSWORD")
     s, bootstrap = login()
-    activation = s.get(BASE + "/api/skills/me/activations").json()["items"][0]
+    activation_items = s.get(BASE + "/api/skills/me/activations").json().get("items", [])
+    activation = next((item for item in activation_items if item.get("desired_enabled") is True), None)
+    if activation is None:
+        raise RuntimeError("没有找到可执行生命周期探针的 active skill activation")
     skill_id = activation["skill_id"]
     scope = {"context_id": bootstrap["context_id"], "session_id": bootstrap["session_id"],
              "access_grant_id": bootstrap["access_grant_id"]}
@@ -64,7 +67,10 @@ def main():
     enabled = s.post(f"{BASE}/api/skills/{skill_id}/enable", json={
         "version_id": activation["version_id"], "target": "memorylab-dsh",
     })
-    current = s.get(BASE + "/api/skills/me/activations").json()["items"][0]
+    current_items = s.get(BASE + "/api/skills/me/activations").json().get("items", [])
+    current = next((item for item in current_items if item.get("skill_id") == skill_id), None)
+    if current is None:
+        raise RuntimeError("重新启用后找不到原 skill activation")
     current_scope = {**scope, "activation_id": current["id"], "version_id": current["version_id"],
                      "generation": current["generation"], "archive_sha256": current["archive_sha256"]}
     catalog_pending = runtime_call(secret, "catalog", scope)
