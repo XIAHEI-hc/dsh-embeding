@@ -88,6 +88,11 @@ async def main_async():
     require(b_session in b_ids, "B cannot list its bootstrap session")
     require(a_session not in b_ids and b_session not in a_ids, "A/B session list leaked a foreign session")
 
+    a_projection = await remote_call(a_cookie, "session/projections", {"sessionId": a_session})
+    require(a_projection["ok"], "A cannot read its own session projections")
+    b_projection_a = await remote_call(b_cookie, "session/projections", {"sessionId": a_session})
+    require(not b_projection_a["ok"], "B read A's session projections")
+
     a_rename = await remote_call(a_cookie, "session/rename", {"sessionId": a_session, "title": "scope-probe-a"})
     require(a_rename["ok"], "A cannot rename its own session")
     b_rename_a = await remote_call(b_cookie, "session/rename", {"sessionId": a_session, "title": "foreign-write"})
@@ -113,6 +118,8 @@ async def main_async():
         "b_session": b_session,
         "a_list_status": a_list["ok"],
         "b_list_status": b_list["ok"],
+        "a_projection_status": a_projection["ok"],
+        "b_projection_a_rejected": not b_projection_a["ok"],
         "a_rename_status": a_rename["ok"],
         "b_rename_a_rejected": not b_rename_a["ok"],
         "a_fork_status": a_fork["ok"],
