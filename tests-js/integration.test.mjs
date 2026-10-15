@@ -6,7 +6,7 @@ import test from 'node:test'
 
 import { isBindableInspection } from '../packages/workbench-extensions/src/integration.js'
 import { verifySessionContext } from '../packages/workbench-extensions/src/integration.js'
-import { durableUsagePayload } from '../packages/workbench-extensions/src/index.js'
+import { durableUsagePayload, recordUsageDurably } from '../packages/workbench-extensions/src/index.js'
 import { normalizePageSurface } from '../packages/workbench-extensions/src/page-surface.js'
 import { IntegrationStore, requestHash } from '@dsh-workbench/extensions/integration-store'
 
@@ -291,6 +291,34 @@ test('durable usage retries keep the original occurred_at fingerprint', () => {
   assert.equal(first.eventId, 'event-a')
   assert.equal(first.occurredAt, '2026-10-15T10:00:00.000Z')
   assert.deepEqual(replay, first)
+})
+
+test('successful usage delivery removes the exact durable event from the outbox', async (t) => {
+  const originalFetch = globalThis.fetch
+  const delivered = []
+  const enqueued = []
+  globalThis.fetch = async () => new Response(JSON.stringify({ accepted: true }), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  })
+  t.after(() => { globalThis.fetch = originalFetch })
+  const integration = {
+    store: {
+      markUsageDelivered(eventId) { delivered.push(eventId) },
+      enqueueUsage(eventId, payload) { enqueued.push({ eventId, payload }) },
+    },
+  }
+  const result = await recordUsageDurably(integration, {
+    integrationKind: 'memorylab', apiOrigin: 'http://memorylab.test',
+    toolSecret: 's'.repeat(32), instanceId: 'instance-a',
+  }, {
+    scope: { context_id: 'context-a', session_id: 'session-a', access_grant_id: 'grant-a' },
+    locator: { owner: 'context-a', activation_id: 'activation-a', version_id: 'version-a', generation: 1, archive_sha256: 'a'.repeat(64) },
+    invocationId: 'invocation-a', nativeRequestId: 'native-a', phase: 'completed',
+  })
+  assert.equal(result.accepted, true)
+  assert.equal(delivered.length, 1)
+  assert.match(delivered[0], /^[0-9a-f-]{36}$/u)
+  assert.deepEqual(enqueued, [])
 })
 
 test('Memory Lab session status verifier binds context, session, grant, and instance', async () => {

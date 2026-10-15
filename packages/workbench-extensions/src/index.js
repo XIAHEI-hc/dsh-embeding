@@ -102,17 +102,17 @@ export function durableUsagePayload(payload, eventId = payload.eventId ?? random
   return { ...payload, eventId, occurredAt: payload.occurredAt ?? occurredAt }
 }
 
-async function recordUsageDurably(integration, config, payload, { signal, required = false } = {}) {
+export async function recordUsageDurably(integration, config, payload, { signal, required = false } = {}) {
   const durable = durableUsagePayload(payload)
   try {
     const result = await recordUsage({
       ...durable, baseUrl: config.apiOrigin, serviceSecret: config.toolSecret,
       instanceId: config.instanceId, signal,
     })
-    integration.store.markUsageDelivered(eventId)
+    integration.store.markUsageDelivered(durable.eventId)
     return result
   } catch (error) {
-    integration.store.enqueueUsage(eventId, durable)
+    integration.store.enqueueUsage(durable.eventId, durable)
     if (required) throw error
     return undefined
   }
