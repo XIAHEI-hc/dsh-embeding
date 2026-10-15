@@ -31,6 +31,29 @@ test('Memory Lab session verification rejects a missing grant before network', a
   )
 })
 
+test('Memory Lab context verification rejects returned grant drift', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    ok: true,
+    context: {
+      context_id: 'context-a', user_id: 'user-a', access_grant_id: 'grant-b',
+      dsh_instance_id: 'instance-a', function_type: 'MEMORYLAB_CHN',
+    },
+  }), { status: 200, headers: { 'content-type': 'application/json' } })
+  try {
+    await assert.rejects(
+      verifyContext({
+        integrationKind: 'memorylab', apiOrigin: 'http://memorylab.test',
+        toolSecret: 'tool-secret', instanceId: 'instance-a',
+        allowedFunctionTypes: ['MEMORYLAB_CHN'], verifyTimeoutMs: 1000,
+      }, 'context-a', undefined, undefined, 'grant-a'),
+      { code: 'SESSION_CONTEXT_MISMATCH' },
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
 test('official initialization events keep a session bindable until its first turn', () => {
   const base = {
     meta: { id: 'session-a' },

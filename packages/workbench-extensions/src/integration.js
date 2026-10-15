@@ -56,7 +56,8 @@ export async function verifyContext(config, contextId, signal, runtimeRegistry, 
       : body.context.project_id
     if (body.context.dsh_instance_id !== config.instanceId
       || !config.allowedFunctionTypes.includes(body.context.function_type)
-      || typeof scopeIdentity !== 'string') {
+      || typeof scopeIdentity !== 'string'
+      || (config.integrationKind === 'memorylab' && body.context.access_grant_id !== accessGrantId)) {
       throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH')
     }
     if (runtimeRegistry !== undefined) {
