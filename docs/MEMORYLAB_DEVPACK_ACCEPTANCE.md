@@ -53,6 +53,32 @@
 - attachment tool 支持 opaque `attachment_id`，并将路径解析限制在当前 runner 的私有 attachment root。
 - Skill 上传链路使用 multipart ZIP、hash 和 immutable version；审核要求非作者，public listing 不泄露 private/draft 版本。
 
+## 2026-10-15 local A/B login and runtime evidence
+
+The development environment was switched from the single `AUTH_MODE=mock`
+identity to `AUTH_MODE=local` using the deployment-managed `.env` backup
+`.dsh-tmp/env.before-ab-local`. The protected Memory Lab acceptance bootstrap
+created two server-side users:
+
+| principal | user id | runtime |
+|---|---|---|
+| `admin` / Acceptance-A | `508f95e0-bf76-4c2b-994d-cc0443039393` | `runner-a` |
+| `acceptance_b` / Acceptance-B | `6d16b6b5-3d30-4536-9f63-abb713fb9551` | `runner-b` |
+
+Observed with real HTTP sessions after rebuilding both compose projects:
+
+- each password login returned a different `ml_session` and `ml_csrf` cookie;
+- each `/api/ai/bootstrap` returned a different context, session and access grant;
+- `GET /scope/redeem` produced a signed scope cookie whose server-decoded
+  runtime was `runner-a` for A and `runner-b` for B;
+- both scoped native roots returned HTTP 200 through the gateway;
+- the runtime registry subjects exactly matched the database user IDs;
+- no placeholder subject is accepted by `scripts/bootstrap-private-runtime.mjs`.
+
+This is stronger than the previous single mock-principal smoke, but it is still
+an HTTP/runtime isolation check. It does not by itself prove the browser's full
+cross-user RPC/WS/file/fork matrix or a real model turn.
+
 ## 尚需现场条件，暂记 BLOCKED / NOT_RUN
 
 以下项目需要真实 Chromium 双浏览器操作、真实模型和/或专门的恢复实验，当前没有把设计预期写成 PASS：
