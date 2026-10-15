@@ -150,6 +150,11 @@ export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret,
       if (!serviceAuthorized(req, serviceSecret)) return writeJson(res, 401, { error: { code: 'AUTH_REQUIRED' } })
       try {
         const body = await readJson(req)
+        for (const field of ['context_id', 'session_id', 'access_grant_id']) {
+          if (typeof body[field] !== 'string' || body[field].length === 0 || body[field].length > 256) {
+            return writeJson(res, 422, { error: { code: 'INVALID_SCOPE' } })
+          }
+        }
         const runtime = runtimeForSubject(registry, body.subject)
         if (body.runtime_id !== runtime.runtimeId) return writeJson(res, 409, { error: { code: 'SCOPE_DENIED' } })
         const token = signScope({ subject: body.subject, runtime_id: runtime.runtimeId, context_id: body.context_id, session_id: body.session_id, access_grant_id: body.access_grant_id }, scopeSecret)

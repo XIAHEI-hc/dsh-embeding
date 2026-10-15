@@ -40,7 +40,7 @@ test('gateway binds only a registry-owned subject and issues HttpOnly scope cook
   const base = `http://127.0.0.1:${address.port}`
   const health = await fetch(`${base}/health`)
   assert.equal(health.status, 200)
-  const denied = await fetch(`${base}/internal/scope/bind`, { method: 'POST', headers: { authorization: 'Bearer service-secret', 'content-type': 'application/json' }, body: JSON.stringify({ subject: 'user-b', runtime_id: 'runner-b' }) })
+  const denied = await fetch(`${base}/internal/scope/bind`, { method: 'POST', headers: { authorization: 'Bearer service-secret', 'content-type': 'application/json' }, body: JSON.stringify({ subject: 'user-b', runtime_id: 'runner-b', context_id: 'ctx-b', session_id: 'session-b', access_grant_id: 'grant-b' }) })
   assert.equal(denied.status, 409)
   const bound = await fetch(`${base}/internal/scope/bind`, { method: 'POST', headers: { authorization: 'Bearer service-secret', 'content-type': 'application/json' }, body: JSON.stringify({ subject: 'user-a', runtime_id: 'runner-a', context_id: 'ctx-a', session_id: 'session-a', access_grant_id: 'grant-a' }) })
   assert.equal(bound.status, 200)
@@ -48,6 +48,28 @@ test('gateway binds only a registry-owned subject and issues HttpOnly scope cook
   const redeemed = await fetch(`${base}/scope/redeem?ticket=${encodeURIComponent(scopeTicket)}`, { redirect: 'manual' })
   assert.equal(redeemed.status, 303)
   assert.match(redeemed.headers.get('set-cookie'), /HttpOnly/)
+  gateway.server.close()
+})
+
+test('gateway refuses an incomplete scope before issuing a handoff ticket', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-gateway-incomplete-bind-'))
+  const registryPath = join(root, 'registry.json')
+  const runtimeSecretPath = join(root, 'runner-secret')
+  writeFileSync(runtimeSecretPath, 'runner-secret-012345678901234567890123')
+  writeFileSync(registryPath, JSON.stringify({ schema_version: '1.0', host_instance_id: 'instance-a', runtimes: [
+    { subject: 'user-a', runtime_id: 'runner-a', internal_origin: 'http://127.0.0.1:9', control_secret_file: runtimeSecretPath, status: 'ready' },
+  ] }))
+  const gateway = createRuntimeGateway({ registryPath, scopeSecret: 'scope-secret', serviceSecret: 'service-secret' })
+  await new Promise(resolve => gateway.server.listen(0, '127.0.0.1', resolve))
+  const address = gateway.server.address()
+  const base = `http://127.0.0.1:${address.port}`
+  const response = await fetch(`${base}/internal/scope/bind`, {
+    method: 'POST',
+    headers: { authorization: 'Bearer service-secret', 'content-type': 'application/json' },
+    body: JSON.stringify({ subject: 'user-a', runtime_id: 'runner-a', context_id: 'ctx-a', session_id: 'session-a' }),
+  })
+  assert.equal(response.status, 422)
+  assert.deepEqual(await response.json(), { error: { code: 'INVALID_SCOPE' } })
   gateway.server.close()
 })
 
