@@ -39,7 +39,7 @@
 | WebSocket live fence | gateway 在升级成功后按 live-check interval 重新验证 Memory Lab lease，失效时销毁浏览器与 runner 两端 socket。 |
 | WebSocket gateway handshake | 现场原始握手曾返回 `101` 但遗漏 `Connection: Upgrade`，浏览器因此反复断线；修复转发头后，真实网关握手返回 `101`、`Upgrade: websocket`、`Connection: Upgrade`，Node WebSocket 客户端保持连接并通过 6 秒 live-check。 |
 | runner workspace seed | runner 空数据卷首次启动从只读 `/seed` 初始化 `/data/workdir`；已有用户文件时不覆盖。`tests/test_runtime_roles.py` 5/5 通过，并在 A/B 容器实际看到 `seed_runtime_probe.py` 与 `bf-screenshots/*`。 |
-| per-runner model credential path | 官方 Web 启动层支持 `DEEPSEEK_API_KEY_FILE`，bootstrap 可分别为 A/B env 生成独立路径；secret 只注入对应 runner 子进程，不进入 iframe、workspace、URL、日志或 gateway。`tests/test_runtime_roles.py` 8/8 通过。当前部署未填真实 key，因此仍未声称真实模型 turn 通过。 |
+| per-runner model credential path | 官方 Web 启动层支持 `DEEPSEEK_API_KEY_FILE`，bootstrap 为 A/B env 生成了不同的 `/private/runner-a-deepseek-api-key` 与 `/private/runner-b-deepseek-api-key` 路径；部署已将用户提供的 key 写入两个 deployment-local 文件，仅注入对应 runner 子进程，不进入 iframe、workspace、URL、日志或 gateway。`tests/test_runtime_roles.py` 8/8 通过。由于当前只提供一枚 key，两个文件的凭据值相同；这证明了文件和进程隔离，但不证明两个供应商凭据值独立。真实模型 turn 仍需完成端到端 usage/CHN 证据。 |
 | fork pre-persistence admission | 官方 session-controller fork 在生成 child ID 后、`agents.create()` 前触发 `api-session/fork-admission`；DSH 先调用 Memory Lab 的 service-auth runtime association endpoint，以 parent 的 live lease/context/runtime 预绑定 child，再写本地 binding；native fork 持久化失败时通过 `api-session/fork-failed` 在两端精确清理未物化 binding。 |
 | 后台 runtime synchronizer | DSH extension 启动时立即扫描持久化的 active binding，并每 30 秒重试 `catalog → resolve → ack`；按 session 去重、dispose 时取消请求。A/B runner 镜像已在真实 private compose 中重建并重启，启动日志无 activation error。首次暴露出的 `/catalog` 路径和 demo package path 问题已修复；真实请求随后完成 `catalog → resolve → ack`，两个启用版本均变为 `installed`。 |
 | agent Skill 注入边界 | 现场会话创建曾因在 agent 子上下文直接读取未注入的 `agent.ctx.skills` 而失败；现改为 `agent.ctx.inject(['skills'], ...)` 后再注册 per-session provider，并已重建 A/B runner。新标签页可看到官方工作区会话树和已启用输入框，runner 日志不再出现 `cannot get property "skills" without inject`。 |
@@ -98,7 +98,7 @@ cross-user RPC/WS/file/fork matrix or a real model turn.
 
 - ISO-09 至 ISO-12 的完整 create/fork、浏览器切换、旧 cookie 和生命周期矩阵。
 - ISO-13 WS 已连接时撤销/禁用的浏览器实测。
-- 浏览器现场尝试：修复网关 WebSocket 握手头并注入 agent `skills` 后，真实 Chromium 已加载官方 DSH iframe；在 slash 输入触发后，官方原生技能菜单实际列出了固定 runtime names `ml-knowledge-cleanup-assistant-v0-9-0-h03c69c545e6c` 与 `ml-runtime-probe-35a513fa79-v1-0-0-hd613cd823c98`，说明 `skills/list` 已从当前 live agent scope 返回 Memory Lab catalog。关闭官方模型配置遮罩后，真实点击第一个固定技能会把已有草稿 `保留的草稿 ` 变为 `保留的草稿 /ml-knowledge-cleanup-assistant-v0-9-0-h03c69c545e6c `，没有自动发送。当前仍缺少真实模型 credential，因此尚未取得发送后的 admission、固定 `SKILL.md` load、`loaded`/terminal usage 和 CHN 工具调用，不计入完整浏览器 PASS。此前的 `WORKSPACE_NOT_FOUND` 和 `skills without inject` 均已定位并修复。
+- 浏览器现场尝试：修复网关 WebSocket 握手头并注入 agent `skills` 后，真实 Chromium 已加载官方 DSH iframe；在 slash 输入触发后，官方原生技能菜单实际列出了固定 runtime names `ml-knowledge-cleanup-assistant-v0-9-0-h03c69c545e6c` 与 `ml-runtime-probe-35a513fa79-v1-0-0-hd613cd823c98`，说明 `skills/list` 已从当前 live agent scope 返回 Memory Lab catalog。关闭官方模型配置遮罩后，A 用户的真实 DSH runtime 已挂载模型 secret 文件，输入框可提交普通真实模型探针；本轮现场没有获得模型消息、admission、固定 `SKILL.md` load、`loaded`/terminal usage 或 CHN tool-call 记录，因此仍不计入完整浏览器 PASS。此前的 `WORKSPACE_NOT_FOUND` 和 `skills without inject` 均已定位并修复。
 - SKL-05 真实模型收到指定 hash instruction 并完成 CHN 工具调用；当前已验证 receipt/usage 链路，未声称模型质量通过。
 - SKL-09 至 SKL-17 的现场切版、断连缓存、排队停用、terminal usage 和多 `/ml-*` 提交矩阵。
 - REC-01 gateway/runner 重启恢复、REG-01 独立 DSH 回归、PRO-03 单边升级/停机、OPS-01 回滚覆盖。
