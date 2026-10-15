@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { signScope, verifyScope } from '@dsh-workbench/runtime-gateway'
+import { signScope, verifyScope, safeUpstreamTarget } from '@dsh-workbench/runtime-gateway'
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -67,6 +67,12 @@ test('gateway rejects malformed scope cookies and never redirects outside its or
   assert.equal(redeemed.status, 303)
   assert.equal(redeemed.headers.get('location'), '/')
   gateway.server.close()
+})
+
+test('gateway target validation rejects absolute-form and network-path targets', () => {
+  assert.equal(safeUpstreamTarget('/api/native?x=1', 'http://runner:8765').origin, 'http://runner:8765')
+  assert.equal(safeUpstreamTarget('http://evil.example/steal', 'http://runner:8765'), undefined)
+  assert.equal(safeUpstreamTarget('//evil.example/steal', 'http://runner:8765'), undefined)
 })
 
 test('gateway performs a live Memory Lab lease check before forwarding native requests', async () => {

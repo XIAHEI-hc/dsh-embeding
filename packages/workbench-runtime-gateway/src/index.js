@@ -208,8 +208,22 @@ function proxyHeaders(req, scope, runtime) {
   }
 }
 
+export function safeUpstreamTarget(requestUrl, origin) {
+  // Node accepts absolute-form request targets.  They must not be allowed to
+  // turn this scoped gateway into an open proxy; only an origin-relative path
+  // may be forwarded to the registry-selected runner.
+  if (typeof requestUrl !== 'string' || !requestUrl.startsWith('/') || requestUrl.startsWith('//')) return undefined
+  try {
+    const target = new URL(requestUrl, origin)
+    const expected = new URL(origin)
+    if (target.origin !== expected.origin) return undefined
+    return target
+  } catch { return undefined }
+}
+
 function proxyHttp(req, res, origin, scope, runtime) {
-  const target = new URL(req.url ?? '/', origin)
+  const target = safeUpstreamTarget(req.url ?? '/', origin)
+  if (target === undefined) return writeJson(res, 400, { error: { code: 'INVALID_SCOPE' } })
   const upstream = http.request({ protocol: target.protocol, hostname: target.hostname, port: target.port, path: `${target.pathname}${target.search}`, method: req.method, headers: proxyHeaders(req, scope, runtime) }, response => {
     res.writeHead(response.statusCode ?? 502, response.headers); response.pipe(res)
   })
@@ -218,7 +232,8 @@ function proxyHttp(req, res, origin, scope, runtime) {
 }
 
 function proxyUpgrade(req, socket, head, origin, scope, runtime, verify, liveInterval) {
-  const target = new URL(req.url ?? '/', origin)
+  const target = safeUpstreamTarget(req.url ?? '/', origin)
+  if (target === undefined) { socket.write('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'); socket.destroy(); return }
   const upstream = http.request({ protocol: target.protocol, hostname: target.hostname, port: target.port, path: `${target.pathname}${target.search}`, method: 'GET', headers: { ...proxyHeaders(req, scope, runtime), connection: 'Upgrade' } })
   upstream.on('upgrade', (response, upstreamSocket, upstreamHead) => {
     // The browser requires Connection: Upgrade on the forwarded handshake.
@@ -254,7 +269,9 @@ function proxyUpgrade(req, socket, head, origin, scope, runtime, verify, liveInt
 }
 
 function proxyControl(req, res, origin, credential) {
-  const target = new URL(req.url.replace(/^\/internal\/control/u, '') || '/', origin)
+  const suffix = req.url.replace(/^\/internal\/control/u, '') || '/'
+  const target = safeUpstreamTarget(suffix, origin)
+  if (target === undefined) return writeJson(res, 400, { error: { code: 'INVALID_SCOPE' } })
   const headers = { ...req.headers, host: target.host, authorization: `Bearer ${credential}` }
   delete headers['x-dsh-subject']
   const upstream = http.request({ protocol: target.protocol, hostname: target.hostname, port: target.port, path: `${target.pathname}${target.search}`, method: req.method, headers }, response => {
