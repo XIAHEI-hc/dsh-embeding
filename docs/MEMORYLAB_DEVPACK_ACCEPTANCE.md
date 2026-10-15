@@ -186,3 +186,31 @@ These results add evidence for ISO-01/02/04/06/07/15 and SKL-07/SKL-15/SKL-16,
 but do not mark the remaining browser WebSocket, restart, outbox-failure,
 fork-rollback, and full version-switch matrix as complete. Those cases still
 require their corresponding live evidence.
+
+## 2026-10-15 continuation: restart recovery probe
+
+`scripts/acceptance_restart.py` performed a reversible live experiment using a
+real A login and an existing scoped cookie. It restarted `runner-a`, the
+gateway, and the Memory Lab backend one at a time, waiting for both the health
+endpoint and a real scoped business request.
+
+Observed result:
+
+```text
+before_root_status       200
+before_catalog_status    200 (1 item)
+after_runner_root_status 200
+after_gateway_root_status 200
+after_backend_root_status 200
+after_catalog_status     200 (1 item)
+after_activation_status  200
+activation               synced / effective_enabled=true
+gateway health           200
+Memory Lab health        200
+```
+
+The first draft of the probe exposed a short-lived `502` after process start:
+gateway health was ready before the runner target was ready. The probe now
+waits for the scoped root itself, so the final result measures the real
+user-scoped path rather than only a listener health check. No volume or
+database was removed.
