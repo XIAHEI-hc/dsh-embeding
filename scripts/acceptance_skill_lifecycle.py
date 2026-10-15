@@ -24,7 +24,9 @@ def login():
     })
     r.raise_for_status()
     s.headers.update({"Origin": "http://localhost:7891", "X-CSRF-Token": s.cookies["ml_csrf"]})
-    return s
+    bootstrap = s.post(BASE + "/api/ai/bootstrap", json={"request_id": str(uuid.uuid4())})
+    bootstrap.raise_for_status()
+    return s, bootstrap.json()
 
 
 def runtime_secret():
@@ -44,14 +46,11 @@ def runtime_call(secret, path, body):
 
 
 def main():
-    s = login()
+    s, bootstrap = login()
     activation = s.get(BASE + "/api/skills/me/activations").json()["items"][0]
     skill_id = activation["skill_id"]
-    scope = {
-        "context_id": "20700a9c-bf35-4b05-9f25-91a441622f04",
-        "session_id": "session-a4d0687e-11f3-498e-9402-32f1eab6672a",
-        "access_grant_id": os.environ["ACCEPTANCE_USER_A_GRANT"],
-    }
+    scope = {"context_id": bootstrap["context_id"], "session_id": bootstrap["session_id"],
+             "access_grant_id": bootstrap["access_grant_id"]}
     secret = runtime_secret()
     disabled = s.post(f"{BASE}/api/skills/{skill_id}/disable")
     catalog_disabled = runtime_call(secret, "catalog", scope)
