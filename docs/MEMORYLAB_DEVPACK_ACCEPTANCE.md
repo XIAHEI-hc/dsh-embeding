@@ -30,7 +30,7 @@
 | stale ACK error semantics | Memory Lab runtime bridge 对旧 generation/version 的 ACK 返回 `409 ACK_STALE`；resolve/admit 仍保留 `SKILL_VERSION_CHANGED`。真实 runner-a 请求在 activation generation=7 下使用 generation=6，得到 `409 ACK_STALE`。 |
 | stale ACK projection fence | activation 切换版本或 generation 后，旧 runtime state 的 `installed` 不再出现在 native catalog；只有 generation、version_id、archive hash 全部匹配的新 ACK 才会重新暴露为 installed。 |
 | scoped runtime credential fence | `AI_DSH_REQUIRE_SCOPED_RUNTIME=true` 时，全局 control secret 不再能用于带 runtime ID 的 runtime data-plane 请求；只有对应 runner credential 能通过，真实 runner-a catalog 仍返回 200。 |
-| queued skill terminal fact | queued `/ml-*` 在切版、停用、revoke 或正文加载失败时，会消费对应 admission queue 并写 `failed`/`cancelled` usage 终态，不再遗留 `admitted`。 |
+| queued skill terminal fact | queued `/ml-*` 在切版、停用、revoke、旧 locator 被新 catalog 替换或正文加载失败时，会消费对应 admission queue 并写 `failed`/`cancelled` usage 终态，不再遗留 `admitted`。 |
 | terminal usage after revoke | 已准入 receipt 在 context、login grant 或权限撤销后仍可通过窄权限路径写入 `completed`/`failed`/`cancelled`；目录、resolve、admit 仍拒绝；同 `event_id` 改变 occurred_at/error_code/turn_ref 会返回 `IDEMPOTENCY_CONFLICT`。 |
 | usage outbox recovery | DSH integration SQLite 持久化脱敏 usage payload；broker 暂时失败时保留 pending、递增 attempts，重启后用相同 `event_id` 与固定 `occurred_at` 重试；真实 runner/backend 故障实验最终在 Memory Lab 写入 `acceptance-outbox-recovery-20261015-v2` 的 `completed` event，并确认 runner outbox 删除。 |
 | latest deployment | 通过 WSL2 Ubuntu Docker 重建并强制重启 `dsh-gateway`、`dsh-user-a`、`dsh-user-b`；三者 healthy/running，A/B 仍分别挂载 `dsh-workbench_user-a-data` 与 `dsh-workbench_user-b-data`，未执行 `down -v`。Memory Lab backend/frontend 亦已重建/运行。 |
