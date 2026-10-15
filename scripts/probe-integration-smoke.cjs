@@ -52,6 +52,19 @@ async function browserRequest(page, path, options = {}) {
   }, { requestPath: path, requestOptions: options })
 }
 
+async function resolveProject(page, selector, functionType) {
+  const projects = await page.evaluate(async type => {
+    const response = await fetch(`/api/projects/?functionType=${encodeURIComponent(type)}`, { credentials: 'include' })
+    if (!response.ok) throw new Error(`project list failed: HTTP_${response.status}`)
+    return response.json()
+  }, functionType)
+  const match = projects.find(project => [project.id, project.deviceName, project.alias]
+    .filter(value => typeof value === 'string' && value.length > 0)
+    .includes(selector))
+  if (!match) throw new Error(`configured Probe project ${selector} was not found for ${functionType}`)
+  return match.id
+}
+
 async function embeddedState(page) {
   await page.locator('iframe[title="DSH AI 工作台"]').waitFor({ state: 'visible', timeout: 30_000 })
   await page.waitForFunction(
@@ -79,7 +92,15 @@ async function embeddedState(page) {
     }, channelId).catch(() => false)
     if (!ready) await page.waitForTimeout(100)
   }
-  assert.equal(ready, true, 'DSH iframe did not finish integration initialization')
+  if (!ready) {
+    const diagnostic = await frame.evaluate(() => ({
+      href: location.href,
+      path: location.pathname,
+      body: document.body?.innerText?.slice(0, 600) || '',
+      pending: (() => { try { return sessionStorage.getItem('dsh.embed.pending.v1') } catch (error) { return `storage:${String(error)}` } })(),
+    })).catch(error => ({ error: String(error), frame_url: frame.url() }))
+    assert.fail(`DSH iframe did not finish integration initialization: ${JSON.stringify(diagnostic)}`)
+  }
   const state = await frame.evaluate(() => JSON.parse(sessionStorage.getItem('dsh.embed.pending.v1')))
   const box = await iframe.boundingBox()
   assert.ok(box && box.width >= 640 && box.height >= 480, 'official DSH iframe must occupy the work area')
@@ -102,7 +123,19 @@ async function embeddedState(page) {
   return state
 }
 
-async function openWorkbench(page, projectId, screenshotName) {
+async function openWorkbench(page, projectId, screenshotName, functionLabel) {
+  // The Probe host enters its authenticated project UI through the current
+  // business portal.  Directly opening the legacy project URL leaves the
+  // FunctionContext empty and the host correctly redirects back to /portal.
+  await page.goto(`${parentOrigin}/portal`, { waitUntil: 'domcontentloaded' })
+  await page.getByRole('button', { name: functionLabel }).waitFor({ timeout: 30_000 })
+  await page.getByRole('button', { name: functionLabel }).click()
+  await page.waitForURL(url => url.origin === parentOrigin && url.pathname === '/projects', { timeout: 30_000 })
+  const projectMarker = page.getByText(`ID: ${projectId}`, { exact: true })
+  await projectMarker.waitFor({ timeout: 30_000 })
+  await projectMarker.click()
+  await page.waitForURL(url => url.origin === parentOrigin
+    && url.pathname.startsWith(`/projects/${encodeURIComponent(projectId)}`), { timeout: 30_000 })
   await page.goto(`${parentOrigin}/projects/${encodeURIComponent(projectId)}/ai-workbench`, {
     waitUntil: 'domcontentloaded',
   })
@@ -140,20 +173,22 @@ async function main() {
     })
     await page.waitForURL(url => url.origin === parentOrigin && url.pathname === '/projects', { timeout: 30_000 })
 
-    const site = await openWorkbench(page, siteProjectId, 'site-ai-workbench.png')
+    const resolvedSiteProjectId = await resolveProject(page, siteProjectId, 'SITE_DESIGN')
+    const resolvedProbecardProjectId = await resolveProject(page, probecardProjectId, 'PROBECARD_DESIGN')
+    const site = await openWorkbench(page, resolvedSiteProjectId, 'site-ai-workbench.png', 'Site 排布设计')
     await page.reload({ waitUntil: 'domcontentloaded' })
     const siteAfterRefresh = await embeddedState(page)
     assert.equal(siteAfterRefresh.session_id, site.session_id, 'refresh must restore the exact Site session')
     assert.equal(siteAfterRefresh.context_id, site.context_id, 'refresh must restore the exact Site context')
 
-    const probecard = await openWorkbench(page, probecardProjectId, 'probecard-ai-workbench.png')
+    const probecard = await openWorkbench(page, resolvedProbecardProjectId, 'probecard-ai-workbench.png', 'Probecard 极优走针设计')
     assert.notEqual(probecard.session_id, site.session_id, 'project modes must use different sessions')
     assert.notEqual(probecard.context_id, site.context_id, 'project modes must use different contexts')
     assert.equal(probecard.workspace_id, site.workspace_id, 'both modes must use the same configured workspace')
 
     const missingCsrf = await browserRequest(
       page,
-      `/api/ai/projects/${encodeURIComponent(probecardProjectId)}/bootstrap`,
+      `/api/ai/projects/${encodeURIComponent(resolvedProbecardProjectId)}/bootstrap`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -177,7 +212,7 @@ async function main() {
 
     const unauthenticated = await browserRequest(
       page,
-      `/api/ai/projects/${encodeURIComponent(probecardProjectId)}/bootstrap`,
+      `/api/ai/projects/${encodeURIComponent(resolvedProbecardProjectId)}/bootstrap`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -191,7 +226,7 @@ async function main() {
       waitUntil: 'domcontentloaded',
     })
     await page.waitForURL(url => url.origin === parentOrigin && url.pathname === '/projects', { timeout: 30_000 })
-    const restored = await openWorkbench(page, probecardProjectId, 'probecard-ai-workbench-relogin.png')
+    const restored = await openWorkbench(page, resolvedProbecardProjectId, 'probecard-ai-workbench-relogin.png', 'Probecard 极优走针设计')
     assert.equal(restored.context_id, probecard.context_id, 'relogin must restore the same context')
     assert.equal(restored.session_id, probecard.session_id, 'relogin must restore the same DSH session')
     const restoredQuery = await toolQuery(restored, 'smoke-after-relogin')
@@ -200,9 +235,9 @@ async function main() {
     assert.deepEqual(failures, [])
 
     process.stdout.write(`${JSON.stringify({
-      site: { project_id: siteProjectId, session_id: site.session_id, context_id: site.context_id },
+      site: { project_id: resolvedSiteProjectId, session_id: site.session_id, context_id: site.context_id },
       probecard: {
-        project_id: probecardProjectId,
+        project_id: resolvedProbecardProjectId,
         session_id: probecard.session_id,
         context_id: probecard.context_id,
       },
