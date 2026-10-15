@@ -9,7 +9,7 @@
 
 | 范围 | 证据 |
 |---|---|
-| DSH 扩展回归 | `npm run test:extensions`：44/44 通过；包含 live Memory Lab lease verify、延迟 provider 注册、fork rollback、重启后 active binding 扫描和 usage outbox 重启恢复/稳定 event id 去重。 |
+| DSH 扩展回归 | `npm run test:extensions`：46/46 通过；包含 live Memory Lab lease verify、延迟 provider 注册、fork rollback、重启后 active binding 扫描、usage outbox 重启恢复/稳定 event id 去重和 canonical skill identity mismatch 拒绝。 |
 | Memory Lab 后端回归 | `PYTHONPATH=backend; python -m pytest -q backend/tests`：66/66 通过；覆盖 context/login revoke 后 terminal usage 以及同 `event_id` 的完整业务 payload replay 冲突；Windows 退出清理阶段的 SQLite `WinError 32` 不影响 pytest 返回码 0。 |
 | Memory Lab 前端 | `npm run typecheck`、`npm run build` 均通过（既有验收记录）。 |
 | 协议契约 | DevPack `python acceptance/check_contracts.py`：6 个合法示例通过，2 个伪造 scope 被拒绝。脚本已显式使用 UTF-8，避免 Windows GBK 环境误报。 |
