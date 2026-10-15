@@ -46,10 +46,14 @@ bootstrap 向允许 origin 发送 `ready`。父页核对 `origin`、`source`、�
 
 Client 插件等待官方 workspace controller snapshot。首次进入时调用 `connectWorkspace(workspaceId)`，立即持久化返回的 session ID；刷新时校验该 session 仍属于授权工作区，再用 `openSession(sessionId)` 恢复同一对话。有初始 prompt 时，仅在当前 draft 为空且尚未应用时调用 `setDraft`；它永不自动提交，刷新和重连也不重新兑换 ticket 或新建会话。`connection.changed` 直接订阅官方 Connection 的 WebSocket/Host 恢复状态，不使用 `navigator.onLine` 代替服务可用性。
 
-P0 消息只有 `ready`、`initialized`、`session.opened`、`connection.changed`、`error`。P1 的任务与产物事件未实现。
+P0 消息只有 `ready`、`initialized`、`session.opened`、`connection.changed`、`error`。P1 的任务与产物事件未实现，消息 schema 也不会伪造这些事件。
 
 ## 信任边界与限制
 
-当前 deployment mode 固定为 `trusted_shared_account`。父系统可以限制谁获得 ticket，但 ticket 兑换后使用的是同一个 DSH operator 权限边界；本实现不声称为每个终端用户提供全 HTTP/RPC/WebSocket ACL，也拒绝无法在普通共享 Cookie 上持续兑现的客户端级 `preview_only`。真正的多租户或客户端级只读需求必须使用隔离 Host，或在官方所有通道上实现统一身份与授权。
+`trusted_shared_account` 是兼容旧部署的单一受信账户模式。父系统可以限制谁获得 ticket，但 ticket 兑换后使用同一个 DSH operator 权限边界；该模式不提供终端用户级全 HTTP/RPC/WebSocket ACL，也会拒绝无法持续兑现的客户端级 `preview_only`。
+
+`embedded_multi_user` 和 `private_runner` 是多用户部署模式。gateway 依据不可变 scope cookie 的 `subject` 和 `runtime_id` 选择登记的私有 runner，并在每个 HTTP、WebSocket 和内部控制请求前向 Memory Lab live verifier 校验 `context_id`、`session_id`、`access_grant_id`、`dsh_instance_id` 和 runtime lease。runner 自己再次验证 native scope；它没有共享 Memory Lab 控制 secret，也不接受调用方任意指定 user、runtime 或 workspace。session、workspace、文件、附件、terminal、队列、fork、rename、archive、delete 和 cancel 的 owner 检查因此覆盖原生通道，而不是只覆盖业务工具。
+
+多用户模式的隔离边界是每用户私有 runner 和数据卷；它不是每 session 一个容器，也不把 `danger-full-access` 容器权限误称为操作系统沙箱。未登记或未 ready 的用户返回 `RUNTIME_NOT_PROVISIONED`/`RUNTIME_UNAVAILABLE`，不能降级到共享 runner。
 
 Python SDK CLI 和旧兼容 API 使用原 adapter/store，与官方 Web 的存储和协议独立。容器整体是当前工具执行隔离边界，不是每 session 独立容器。

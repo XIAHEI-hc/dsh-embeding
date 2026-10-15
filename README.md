@@ -2,9 +2,11 @@
 
 本仓库运行完整的官方 `@deepseek-ai/dsh@0.2.0-rc.2` Web，并保留官方 Python SDK `0.1.5rc1` 命令行入口。官方界面、会话协议、流式输出、工具调用、文件面板、模型设置和插件系统不被替换；仓库在官方扩展点上增加受控工作区、一次性嵌入票据和同站点 iframe 导航。
 
-当前已实现可信共享账户模式的 P0 嵌入：现有目录注册、路径策略、创建/提交/执行守卫、官方浏览器 Cookie 签发、精确 CSP、`postMessage` 初始化、官方工作区/会话导航，以及只填草稿且不自动发送的初始提示。工作区级 `preview_only` 在服务端阻止会话创建、提示提交和 Agent 执行；共享账户无法持续区分客户端身份，因此客户端级 `preview_only` 配置会被拒绝。
+仓库同时支持两种明确的部署模式。默认的 `trusted_shared_account` 适合单一受信父系统，保留原有 P0 嵌入、路径策略、官方 Cookie、CSP 和工作区级 `preview_only` 约束；共享 Cookie 不能持续实施客户端级 ACL，因此该模式会拒绝客户端级 `preview_only`。
 
-它不是多租户授权或每会话沙箱。嵌入仅支持同 scheme、同可注册域的不同 origin；跨站点部署、`task.changed`、`artifact.created` 和真实用户级 ACL 不在本阶段能力内。
+Memory Lab 使用 `embedded_multi_user`/`private_runner` 模式：gateway 先验证 Memory Lab subject、context、session 和 access grant，再把请求路由到该用户登记的私有 runner。每个 runner 有独立的 `DSH_HOME`、session/history、workspace、附件、terminal、WebSocket、RPC、技能缓存和 runner credential；原生 session、workspace、file、attachment、fork、queue、cancel、rename、archive 和 delete 都在 gateway 与 runner 两端重复做 scope 校验。没有准备好的私有 runtime 时会明确失败，不会回退到共享账户。该模式是本仓库面向多用户嵌入的实际实现边界，但仍然不是每个 session 一个容器。
+
+两种模式都只支持同 scheme、同可注册域的 iframe；`task.changed` 和 `artifact.created` 仍属于未声明的 P1 消息，不能从 P0 状态消息推断出来。
 
 ## 独立 Web
 

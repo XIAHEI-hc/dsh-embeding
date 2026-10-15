@@ -2,7 +2,7 @@
 
 ## 前提与部署模型
 
-本实现支持可信共享账户下的同站点、不同 origin iframe。例如父页面 `https://portal.example.test` 和 DSH `https://dsh.example.test` 可以工作；`https://portal.other.test` 与 `https://dsh.example.test` 属于跨站点，配置会被拒绝。生产部署应使用 HTTPS，使官方 Cookie 同时具备 HttpOnly、SameSite=Strict 和 Secure。
+本实现支持两种同站点、不同 origin iframe 部署。`trusted_shared_account` 适用于单一受信父系统；`embedded_multi_user`/`private_runner` 由 gateway 将每个已验证 subject 路由到自己的 DSH runner。例如父页面 `https://portal.example.test` 和 DSH `https://dsh.example.test` 可以工作；`https://portal.other.test` 与 `https://dsh.example.test` 属于跨站点，配置会被拒绝。生产部署应使用 HTTPS，使官方 Cookie 同时具备 HttpOnly、SameSite=Strict 和 Secure。
 
 父系统必须有后端。client secret 只能在父后端或 secret file 中存在，不能进入 JavaScript、HTML、URL、日志或 API 响应。
 
@@ -26,7 +26,7 @@ cp config/embed.example.json config/embed.json
 | `ticket_ttl_seconds` | 默认票据寿命 |
 | `ticket_max_ttl_seconds` | 票据寿命上限 |
 | `ready_timeout_ms` / `init_timeout_ms` | 父子初始化超时 |
-| `deployment_mode` | 必须为 `trusted_shared_account` |
+| `deployment_mode` | `trusted_shared_account`、`embedded_multi_user` 或 `private_runner`；后两者要求 gateway/runtime registry 和 runner credential |
 | `clients[].client_id` | 父后端身份 |
 | `clients[].secret_env` / `secret_file` | 二选一，secret 长度 32..4096 字符 |
 | `clients[].allowed_parent_origins` | 该 client 可申请的父 origin |
@@ -145,7 +145,8 @@ EzProber 的业务上下文绑定、Host-only 控制接口、数据库工具配�
 
 ## 已知限制
 
-- 仅可信共享账户；没有每用户全通道 ACL，也没有每 session 独立容器。
+- `trusted_shared_account` 没有每用户全通道 ACL；多用户模式使用每用户私有 runner，并覆盖已支持的 HTTP/RPC/WebSocket/native owner 边界。
+- 多用户模式的隔离粒度是 runner、`DSH_HOME` 和数据卷；没有每 session 独立容器。
 - 仅同站点 iframe；跨站点按设计拒绝。
 - P0 消息为 `ready`、`initialized`、`session.opened`、`connection.changed`、`error`；没有 `task.changed` 或 `artifact.created`。
 - 工作区级 `preview_only` 阻止执行，不代表提供专用只读文件浏览 UI；客户端级 `preview_only` 在共享账户模式下按配置错误拒绝。
