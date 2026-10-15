@@ -225,6 +225,13 @@ export class IntegrationStore {
         if (accessGrantId === undefined || accessGrantId === existing.access_grant_id) {
           throw new WorkbenchExtensionError('CONTEXT_REVOKED')
         }
+        // Re-login may rotate the browser grant, but it must never move an
+        // existing session to a different private runner.  Runtime identity
+        // is part of the immutable execution boundary just like context and
+        // workspace.
+        if (runtimeId !== undefined && existing.runtime_id !== runtimeId) {
+          throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+        }
         // A revoked binding may be reopened for a fresh login grant only
         // after all immutable identity fields above have matched. This keeps
         // logout/re-login usable without allowing an active browser to take
