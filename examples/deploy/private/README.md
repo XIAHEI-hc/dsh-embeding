@@ -33,6 +33,19 @@ loads the value only into that runner's child DSH process; it is never exposed
 through the iframe, workspace files, browser state, logs, or the gateway. Do
 not put a shared model key in the checked-in env templates.
 
+The deployment-local `gateway.env` must also set:
+
+```text
+MEMORYLAB_RUNTIME_VERIFY_ORIGIN=http://memorylab-api:9000
+MEMORYLAB_RUNTIME_VERIFY_TIMEOUT_MS=5000
+MEMORYLAB_RUNTIME_LIVE_CHECK_INTERVAL_MS=5000
+```
+
+The private compose template defaults the host gateway port to `8875`, matching
+the `dsh_origin` advertised by the Memory Lab deployment. Keep the verifier
+origin and port explicit when invoking compose so a restart cannot silently
+disable the live lease fence or move the public origin.
+
 When generating private material, `DEEPSEEK_API_KEY_FILE_A` and
 `DEEPSEEK_API_KEY_FILE_B` can be set to the corresponding container paths; the
 bootstrap script writes those paths only into the matching runner env file.
