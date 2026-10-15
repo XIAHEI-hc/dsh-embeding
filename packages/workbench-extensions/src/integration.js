@@ -80,6 +80,10 @@ export async function verifyContext(config, contextId, signal, runtimeRegistry, 
 }
 
 export async function verifySessionContext(config, contextId, sessionId, accessGrantId, signal) {
+  if (config.integrationKind === 'memorylab'
+    && (typeof accessGrantId !== 'string' || accessGrantId.length === 0)) {
+    throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+  }
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(new Error('session verify timeout')), config.verifyTimeoutMs)
   const combined = signal === undefined ? controller.signal : AbortSignal.any([signal, controller.signal])

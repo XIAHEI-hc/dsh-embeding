@@ -24,6 +24,13 @@ test('Memory Lab context verification requires the exact browser grant', async (
   )
 })
 
+test('Memory Lab session verification rejects a missing grant before network', async () => {
+  await assert.rejects(
+    verifySessionContext({ integrationKind: 'memorylab' }, 'context-a', 'session-a'),
+    { code: 'CONTEXT_REVOKED' },
+  )
+})
+
 test('official initialization events keep a session bindable until its first turn', () => {
   const base = {
     meta: { id: 'session-a' },
