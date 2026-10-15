@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:dsh-embed:message:v1",
-  "title": "DSH Embed P0 Message",
+  "title": "DSH Embed Message",
   "type": "object",
   "properties": {
     "protocol": { "const": "dsh.embed" },
