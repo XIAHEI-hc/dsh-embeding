@@ -4,8 +4,8 @@ import { randomBytes } from 'node:crypto'
 import { join, resolve } from 'node:path'
 
 const root = resolve(process.env.PRIVATE_RUNTIME_DIR ?? 'examples/deploy/private')
-const userA = process.env.MEMORYLAB_USER_A_ID ?? '00000000-0000-4000-8000-00000000000a'
-const userB = process.env.MEMORYLAB_USER_B_ID ?? '00000000-0000-4000-8000-00000000000b'
+const userA = process.env.MEMORYLAB_USER_A_ID?.trim() ?? ''
+const userB = process.env.MEMORYLAB_USER_B_ID?.trim() ?? ''
 const apiOrigin = process.env.MEMORYLAB_API_ORIGIN ?? 'http://memorylab-api:9000'
 // The browser-facing portal and gateway must be same-site.  Production should
 // pass the public portal origin explicitly (usually the shared HTTPS origin).
@@ -14,6 +14,21 @@ const publicOrigin = process.env.MEMORYLAB_DSH_PUBLIC_ORIGIN ?? 'http://localhos
 const modelKeyFile = {
   'runner-a': process.env.DEEPSEEK_API_KEY_FILE_A ?? '',
   'runner-b': process.env.DEEPSEEK_API_KEY_FILE_B ?? '',
+}
+
+function requireUuid(value, name) {
+  if (!value || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    throw new Error(`${name} must be an explicit UUID from the authenticated Memory Lab user record`)
+  }
+}
+
+requireUuid(userA, 'MEMORYLAB_USER_A_ID')
+requireUuid(userB, 'MEMORYLAB_USER_B_ID')
+if (userA.toLowerCase() === userB.toLowerCase()) {
+  throw new Error('MEMORYLAB_USER_A_ID and MEMORYLAB_USER_B_ID must identify different users')
+}
+if (modelKeyFile['runner-a'] && modelKeyFile['runner-a'] === modelKeyFile['runner-b']) {
+  throw new Error('DEEPSEEK_API_KEY_FILE_A and DEEPSEEK_API_KEY_FILE_B must be different paths')
 }
 
 function secret() { return randomBytes(32).toString('base64url') }

@@ -1,21 +1,31 @@
 # Local private runner material
 
 This directory is intentionally ignored because it contains generated secrets and
-user-specific runtime identities. Generate it on a deployment host with:
+user-specific runtime identities. Generate it on a deployment host only after
+obtaining two authenticated Memory Lab user UUIDs:
 
 ```sh
+MEMORYLAB_USER_A_ID=<uuid-from-memory-lab> \
+MEMORYLAB_USER_B_ID=<different-uuid-from-memory-lab> \
 node scripts/bootstrap-private-runtime.mjs
 ```
 
 The script creates separate A/B runner env files, `DSH_HOME` paths, workspace and
-embed configs, a runtime registry, and random service/scope secrets. Replace the
-development defaults with the real Memory Lab user IDs and service origin before
-running the two-user acceptance cases.
+embed configs, a runtime registry, and random service/scope secrets. The script
+rejects missing or placeholder subjects. Registry subjects are server-issued
+user IDs and must not come from browser fields or runner-generated values.
 
 The generated `runtime-secrets.json` is the Memory Lab control-plane mapping for
 `AI_TOOL_RUNTIME_SECRETS_JSON`; inject its JSON contents into the Memory Lab
 backend environment through the deployment secret manager. The runner credential
 files must never be replaced with the shared `AI_TOOL_SERVICE_SECRET`.
+
+For local A/B acceptance accounts, use a deployment-managed env file with
+`AUTH_MODE=local`, then run
+`backend/scripts/bootstrap_acceptance_users.py` inside the Memory Lab backend
+with `ACCEPTANCE_BOOTSTRAP_CONFIRM=YES` and two distinct usernames/passwords.
+The script returns server-created UUIDs without printing passwords and refuses
+production and mock mode. Pass those UUIDs to the runtime bootstrap above.
 
 For a real model deployment, give each runner its own read-only model secret
 file and set `DEEPSEEK_API_KEY_FILE` in that runner's env file. The launcher
