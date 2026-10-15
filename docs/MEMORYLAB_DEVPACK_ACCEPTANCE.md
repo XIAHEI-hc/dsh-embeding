@@ -154,3 +154,35 @@ Memory Lab 侧完成并验证：
 - `npm run test:embed`：通过，覆盖官方 workspace、一次性 ticket、cookie、iframe 协议、connection、draft-only prompt 和同 session reload。
 
 以下仍明确标记为未测/受阻：真实登录后的 BF/CHN 逐页 L4、真实 provider input 与模型回答三段证据、真实模型 Skill load/usage、以及需要真实浏览器会话的跨标签/queue/steer/Stop/恢复矩阵。当前数据库中的既有 `admin` 密码与 `.env` 配置不匹配；未重置、创建或绕过认证账号。
+
+## 2026-10-15 continuation: live A/B, attachment, and Skill lifecycle evidence
+
+The previous single-user note above is retained as historical context. The
+current deployment was rechecked with the real local A/B accounts and the
+private runner compose after the runtime bridge changes.
+
+- A is `admin` (`508f95e0-bf76-4c2b-994d-cc0443039393`) on `runner-a`; B is
+  `acceptance_b` (`6d16b6b5-3d30-4536-9f63-abb713fb9551`) on `runner-b`.
+- A and B login/bootstrap returned `200` with different contexts, sessions and
+  grants. A's activation projection contained one Skill; B's contained zero.
+- B attempting to associate A's context/session returned `409`
+  `SESSION_CONTEXT_MISMATCH`. A gateway request without a scope cookie returned
+  `401`; both one-time scope redeems returned `303`.
+- The live reversible Skill probe disabled A's activation, observed
+  `resolve=409 SKILL_NOT_ENABLED`, re-enabled the same fixed version, ACKed the
+  new generation, and observed `resolve=200`. The final runtime state was
+  `synced`, `effective_enabled=true`, `ack_status=installed`.
+- The A/B bootstrap script now preserves an existing ADMIN role. Re-running it
+  no longer silently removes `skills:use` from an administrator.
+- DSH attachment upload now requires a canonical `sha256:` file reference in
+  the current session event/pending-submission set, resolves the official
+  content-addressed path, verifies the bytes and digest, and uploads that same
+  verified byte buffer. A guessed ID, another session's ID, an outside path, or
+  a changed file is rejected.
+- Current regression evidence: DSH extensions `52 passed`; Memory Lab backend
+  `71 passed` with the existing Windows SQLite cleanup warning.
+
+These results add evidence for ISO-01/02/04/06/07/15 and SKL-07/SKL-15/SKL-16,
+but do not mark the remaining browser WebSocket, restart, outbox-failure,
+fork-rollback, and full version-switch matrix as complete. Those cases still
+require their corresponding live evidence.
