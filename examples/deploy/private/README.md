@@ -71,6 +71,23 @@ check at `MEMORYLAB_RUNTIME_LIVE_CHECK_INTERVAL_MS` (default 5000 ms), and
 closes both sides when the lease is no longer valid. If the backend is
 unavailable or the grant is revoked, the gateway fails closed.
 
+Before recreating the stack, run the deployment-only boundary check. It reads
+only variable names and JSON mapping keys; it never prints secret values:
+
+```sh
+RUNTIME_REGISTRY=examples/deploy/private/runtime-registry.json \
+MEMORYLAB_RUNTIME_ENV=examples/deploy/private/memorylab-runtime.env \
+RUNNER_ENV_DIR=examples/deploy/private \
+MEMORYLAB_BACKEND_ENV=/path/to/memorylab/.env \
+REQUIRE_MODEL_KEY_FILES=true \
+npm run check:private-runtime
+```
+
+The check confirms that registry subjects match Memory Lab mappings, every
+runner declares `WORKBENCH_ROLE=runner`, control-plane secrets are absent from
+runner env files, runner model-key file paths are distinct, and the Memory Lab
+backend does not contain `DEEPSEEK_API_KEY`.
+
 ## Compose invocation on the WSL2 host
 
 The private runner overlay must be listed before the base compose file so its

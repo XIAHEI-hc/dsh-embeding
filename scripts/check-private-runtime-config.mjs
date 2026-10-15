@@ -9,6 +9,9 @@ import { resolve } from 'node:path'
 
 const registryPath = resolve(process.env.RUNTIME_REGISTRY ?? 'examples/deploy/private/runtime-registry.json')
 const memoryLabEnvPath = resolve(process.env.MEMORYLAB_RUNTIME_ENV ?? '../private_MEM_LAB/deploy/private/runtime-secrets.env')
+const runnerEnvDir = process.env.RUNNER_ENV_DIR ? resolve(process.env.RUNNER_ENV_DIR) : undefined
+const backendEnvPath = process.env.MEMORYLAB_BACKEND_ENV ? resolve(process.env.MEMORYLAB_BACKEND_ENV) : undefined
+const requireModelKeyFiles = /^(1|true|yes)$/iu.test(process.env.REQUIRE_MODEL_KEY_FILES ?? '')
 
 function fail(message) {
   console.error(JSON.stringify({ result: 'FAIL', code: 'CONFIG_INVALID', message }, null, 2))
@@ -32,6 +35,15 @@ function readEnvFile(path) {
   return values
 }
 
+function parseEnvObject(env, key) {
+  const raw = env[key]
+  if (!raw) throw new Error(`${key} is required and must be a JSON object`)
+  try { return object(JSON.parse(raw), key) } catch (error) {
+    if (error?.message === `${key} is required and must be a JSON object`) throw error
+    throw new Error(`${key} is required and must be a JSON object`)
+  }
+}
+
 try {
   const registry = object(JSON.parse(readFileSync(registryPath, 'utf8')), 'runtime registry')
   if (!Array.isArray(registry.runtimes) || registry.runtimes.length === 0) throw new Error('runtime registry runtimes is empty')
@@ -50,8 +62,8 @@ try {
   }
 
   const env = readEnvFile(memoryLabEnvPath)
-  const secrets = object(JSON.parse(env.AI_TOOL_RUNTIME_SECRETS_JSON ?? ''), 'AI_TOOL_RUNTIME_SECRETS_JSON')
-  const subjects = object(JSON.parse(env.AI_TOOL_RUNTIME_SUBJECTS_JSON ?? ''), 'AI_TOOL_RUNTIME_SUBJECTS_JSON')
+  const secrets = parseEnvObject(env, 'AI_TOOL_RUNTIME_SECRETS_JSON')
+  const subjects = parseEnvObject(env, 'AI_TOOL_RUNTIME_SUBJECTS_JSON')
   const secretIds = Object.keys(secrets).sort()
   const subjectIds = Object.keys(subjects).sort()
   const registrySorted = registryRows.map(row => row.runtimeId).sort()
@@ -64,6 +76,28 @@ try {
   if (shortSecrets.length > 0) throw new Error(`runtime secret is missing or shorter than 32 bytes: ${shortSecrets.map(row => row.runtimeId).join(', ')}`)
 
   const ready = registryRows.filter(row => row.status === 'ready').map(row => row.runtimeId)
+  const runnerModelKeyFiles = {}
+  if (runnerEnvDir) {
+    const modelKeyPaths = []
+    for (const row of registryRows) {
+      const runnerEnv = readEnvFile(resolve(runnerEnvDir, `${row.runtimeId}.env`))
+      if (runnerEnv.WORKBENCH_ROLE !== 'runner') throw new Error(`${row.runtimeId} must declare WORKBENCH_ROLE=runner`)
+      for (const forbidden of ['AI_DSH_GATEWAY_SERVICE_SECRET', 'WORKBENCH_GATEWAY_SERVICE_SECRET', 'WORKBENCH_SCOPE_COOKIE_SECRET', 'AI_TOOL_SERVICE_SECRET']) {
+        if (runnerEnv[forbidden]) throw new Error(`${row.runtimeId} must not receive ${forbidden}`)
+      }
+      const modelKeyFile = runnerEnv.DEEPSEEK_API_KEY_FILE ?? ''
+      if (requireModelKeyFiles && !modelKeyFile) throw new Error(`${row.runtimeId} is missing DEEPSEEK_API_KEY_FILE`)
+      if (modelKeyFile) modelKeyPaths.push(modelKeyFile)
+      runnerModelKeyFiles[row.runtimeId] = Boolean(modelKeyFile)
+    }
+    if (new Set(modelKeyPaths).size !== modelKeyPaths.length) throw new Error('runner model key file paths must be unique')
+  }
+  let backendModelKeyRejected = false
+  if (backendEnvPath) {
+    const backendEnv = readEnvFile(backendEnvPath)
+    if (backendEnv.DEEPSEEK_API_KEY) throw new Error('Memory Lab backend must not contain DEEPSEEK_API_KEY')
+    backendModelKeyRejected = true
+  }
   console.log(JSON.stringify({
     result: 'PASS',
     registry: registryPath,
@@ -72,6 +106,8 @@ try {
     ready_runtime_ids: ready,
     subject_bindings_verified: registryRows.length,
     secret_lengths_verified: registryRows.length,
+    runner_model_key_files: runnerModelKeyFiles,
+    backend_model_key_absent: backendModelKeyRejected || undefined,
   }, null, 2))
 } catch (error) {
   fail(error instanceof Error ? error.message : String(error))
