@@ -21,7 +21,7 @@ function exactOrigin(value, label) {
 }
 
 /** Control-plane registry. Unknown subjects fail; there is no shared fallback. */
-export function loadRuntimeRegistry(pathValue = process.env.WORKBENCH_RUNTIME_REGISTRY) {
+export function loadRuntimeRegistry(pathValue = process.env.WORKBENCH_RUNTIME_REGISTRY, options = {}) {
   if (!pathValue) fail('多用户模式必须配置 WORKBENCH_RUNTIME_REGISTRY')
   let input
   try { input = JSON.parse(readFileSync(resolve(pathValue), 'utf8')) } catch { fail(`无法读取 runtime registry: ${pathValue}`) }
@@ -42,6 +42,9 @@ export function loadRuntimeRegistry(pathValue = process.env.WORKBENCH_RUNTIME_RE
     const controlSecretFile = item.control_secret_file === undefined
       ? undefined
       : requiredString(item.control_secret_file, `runtimes[${index}].control_secret_file`, 1024)
+    if (options.requireControlSecrets === true && controlSecretFile === undefined) {
+      fail(`runtimes[${index}].control_secret_file 在 scoped gateway 中必须配置`)
+    }
     return Object.freeze({ subject, runtimeId, internalOrigin: exactOrigin(item.internal_origin, `runtimes[${index}].internal_origin`), status, controlSecretFile })
   })
   return Object.freeze({ schemaVersion: '1.0', hostInstanceId, runtimes: Object.freeze(runtimes) })

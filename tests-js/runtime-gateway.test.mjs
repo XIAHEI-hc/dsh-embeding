@@ -29,8 +29,10 @@ test('scope token rejects tampering and malformed payloads', () => {
 test('gateway binds only a registry-owned subject and issues HttpOnly scope cookie', async () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-gateway-'))
   const registryPath = join(root, 'registry.json')
+  const runtimeSecretPath = join(root, 'runner-secret')
+  writeFileSync(runtimeSecretPath, 'runner-secret')
   writeFileSync(registryPath, JSON.stringify({ schema_version: '1.0', host_instance_id: 'instance-a', runtimes: [
-    { subject: 'user-a', runtime_id: 'runner-a', internal_origin: 'http://127.0.0.1:9', status: 'ready' },
+    { subject: 'user-a', runtime_id: 'runner-a', internal_origin: 'http://127.0.0.1:9', control_secret_file: runtimeSecretPath, status: 'ready' },
   ] }))
   const gateway = createRuntimeGateway({ registryPath, scopeSecret: 'scope-secret', serviceSecret: 'service-secret' })
   await new Promise(resolve => gateway.server.listen(0, '127.0.0.1', resolve))
@@ -52,8 +54,10 @@ test('gateway binds only a registry-owned subject and issues HttpOnly scope cook
 test('gateway rejects malformed scope cookies and never redirects outside its origin', async () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-gateway-cookie-'))
   const registryPath = join(root, 'registry.json')
+  const runtimeSecretPath = join(root, 'runner-secret')
+  writeFileSync(runtimeSecretPath, 'runner-secret')
   writeFileSync(registryPath, JSON.stringify({ schema_version: '1.0', host_instance_id: 'instance-a', runtimes: [
-    { subject: 'user-a', runtime_id: 'runner-a', internal_origin: 'http://127.0.0.1:9', status: 'ready' },
+    { subject: 'user-a', runtime_id: 'runner-a', internal_origin: 'http://127.0.0.1:9', control_secret_file: runtimeSecretPath, status: 'ready' },
   ] }))
   const gateway = createRuntimeGateway({ registryPath, scopeSecret: 'scope-secret', serviceSecret: 'service-secret' })
   await new Promise(resolve => gateway.server.listen(0, '127.0.0.1', resolve))
@@ -67,6 +71,15 @@ test('gateway rejects malformed scope cookies and never redirects outside its or
   assert.equal(redeemed.status, 303)
   assert.equal(redeemed.headers.get('location'), '/')
   gateway.server.close()
+})
+
+test('gateway refuses a ready registry without runner control credentials', () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-gateway-missing-secret-'))
+  const registryPath = join(root, 'registry.json')
+  writeFileSync(registryPath, JSON.stringify({ schema_version: '1.0', host_instance_id: 'instance-a', runtimes: [
+    { subject: 'user-a', runtime_id: 'runner-a', internal_origin: 'http://127.0.0.1:9', status: 'ready' },
+  ] }))
+  assert.throws(() => createRuntimeGateway({ registryPath, scopeSecret: 'scope-secret', serviceSecret: 'service-secret' }), { code: 'CONFIG_INVALID' })
 })
 
 test('gateway target validation rejects absolute-form and network-path targets', () => {

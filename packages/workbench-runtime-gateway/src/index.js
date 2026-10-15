@@ -133,7 +133,10 @@ function targetFor(req, registry, secret, now, maxAgeMs) {
 
 export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret, maxScopeAgeMs, liveCheckIntervalMs, fetchImpl = fetch }) {
   if (!scopeSecret || !serviceSecret) throw new Error('scopeSecret and serviceSecret are required')
-  const registry = loadRuntimeRegistry(registryPath)
+  // A gateway without runner credentials can still bind tickets and report
+  // healthy while every scoped request fails at the first proxy hop. Reject
+  // that configuration during startup so readiness means usable runtimes.
+  const registry = loadRuntimeRegistry(registryPath, { requireControlSecrets: true })
   const maxAge = maxScopeAgeMs ?? 8 * 60 * 60 * 1000
   const verifyOrigin = process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN
   const verifyTimeoutMs = Number(process.env.MEMORYLAB_RUNTIME_VERIFY_TIMEOUT_MS ?? 5000)
