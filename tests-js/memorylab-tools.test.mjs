@@ -58,6 +58,19 @@ test('Memory Lab query scope comes only from the bound DSH session', async (t) =
   assert.equal((await client(root, store).query('memorylab_list_datasets', {}, exec)).ok, true)
 })
 
+test('Memory Lab tools fail closed before network on an incomplete binding', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'memorylab-incomplete-binding-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const store = { requireActive() { return { contextId: 'context-a', instanceId: 'memorylab-dsh' } } }
+  let called = false
+  t.mock.method(globalThis, 'fetch', async () => { called = true; throw new Error('network must not be reached') })
+  await assert.rejects(
+    client(root, store).query('memorylab_list_datasets', {}, exec),
+    /SESSION_CONTEXT_MISMATCH/u,
+  )
+  assert.equal(called, false)
+})
+
 test('Memory Lab client creates a missing attachment root on first startup', (t) => {
   const parent = mkdtempSync(join(tmpdir(), 'memorylab-home-'))
   const root = join(parent, 'attachments', 'v1', 'files')

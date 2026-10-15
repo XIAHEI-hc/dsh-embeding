@@ -106,7 +106,11 @@ export class MemoryLabToolClient {
     const sessionId = exec?.agent?.session?.header?.id
     if (typeof sessionId !== 'string') throw new Error('CONTEXT_NOT_BOUND: tool execution has no owning DSH session')
     const binding = this.store.requireActive(sessionId)
-    if (binding.instanceId !== this.instanceId) throw new Error('SESSION_CONTEXT_MISMATCH: DSH instance differs')
+    if (binding.instanceId !== this.instanceId
+      || typeof binding.contextId !== 'string' || binding.contextId.length === 0
+      || typeof binding.accessGrantId !== 'string' || binding.accessGrantId.length === 0) {
+      throw new Error('SESSION_CONTEXT_MISMATCH: DSH binding is incomplete or belongs to another instance')
+    }
     return { binding, sessionId }
   }
 
