@@ -71,6 +71,22 @@ test('Memory Lab tools fail closed before network on an incomplete binding', asy
   assert.equal(called, false)
 })
 
+test('runner tools reject a binding for another runtime before network', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'memorylab-runtime-binding-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const store = { requireActive() {
+    return { contextId: 'context-a', instanceId: 'memorylab-dsh', accessGrantId: 'grant-a', runtimeId: 'runner-b' }
+  } }
+  const runnerClient = new MemoryLabToolClient({
+    origin: 'http://memorylab.test', publicOrigin: 'http://portal.test', instanceId: 'memorylab-dsh',
+    runtimeId: 'runner-a', secret: 'x'.repeat(32), timeoutMs: 1000, attachmentsRoot: root, store,
+  })
+  let called = false
+  t.mock.method(globalThis, 'fetch', async () => { called = true; throw new Error('network must not be reached') })
+  await assert.rejects(runnerClient.query('memorylab_list_datasets', {}, exec), /SESSION_CONTEXT_MISMATCH/u)
+  assert.equal(called, false)
+})
+
 test('Memory Lab client creates a missing attachment root on first startup', (t) => {
   const parent = mkdtempSync(join(tmpdir(), 'memorylab-home-'))
   const root = join(parent, 'attachments', 'v1', 'files')

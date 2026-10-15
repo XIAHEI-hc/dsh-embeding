@@ -108,7 +108,8 @@ export class MemoryLabToolClient {
     const binding = this.store.requireActive(sessionId)
     if (binding.instanceId !== this.instanceId
       || typeof binding.contextId !== 'string' || binding.contextId.length === 0
-      || typeof binding.accessGrantId !== 'string' || binding.accessGrantId.length === 0) {
+      || typeof binding.accessGrantId !== 'string' || binding.accessGrantId.length === 0
+      || (this.runtimeId !== undefined && binding.runtimeId !== this.runtimeId)) {
       throw new Error('SESSION_CONTEXT_MISMATCH: DSH binding is incomplete or belongs to another instance')
     }
     return { binding, sessionId }
