@@ -63,3 +63,24 @@ native HTTP or WebSocket request. After a WebSocket handshake it repeats that
 check at `MEMORYLAB_RUNTIME_LIVE_CHECK_INTERVAL_MS` (default 5000 ms), and
 closes both sides when the lease is no longer valid. If the backend is
 unavailable or the grant is revoked, the gateway fails closed.
+
+## Compose invocation on the WSL2 host
+
+The private runner overlay must be listed before the base compose file so its
+relative `env_file` and bind paths resolve under `examples/deploy/private`.
+From the repository root, pass deployment variables inside WSL (Windows
+environment variables are not mirrored automatically):
+
+```sh
+wsl.exe -d Ubuntu --exec env \
+  DSH_INTERNAL_NETWORK=dsh-private-check \
+  MEMORYLAB_DOCKER_NETWORK=memorylab-internal \
+  docker compose \
+  -f examples/deploy/compose.private-runners.yaml \
+  -f compose.yaml \
+  up -d --build dsh-gateway dsh-user-a dsh-user-b
+```
+
+This starts the scoped gateway and the two private runners. Do not start the
+base `workbench` service for this topology; it does not have the generated
+`/private/config` mounts and is not a substitute for the per-user runners.
