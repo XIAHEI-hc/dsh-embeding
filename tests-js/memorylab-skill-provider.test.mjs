@@ -28,6 +28,31 @@ test('provider rejects candidates from another scope', async () => {
   await assert.rejects(provider.get({ provider: 'memorylab-remote', locator: { owner: 'ctx-b' } }), { code: 'SCOPE_DENIED' })
 })
 
+test('provider rejects malformed locators before contacting the broker', async () => {
+  let requests = 0
+  const provider = createRemoteProvider({
+    baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope,
+    fetchImpl: async () => { requests += 1; return { ok: true, json: async () => ({}) } },
+  })
+  await assert.rejects(provider.get({ provider: 'memorylab-remote', locator: {
+    owner: 'ctx-a', activation_id: 'a', version_id: 'v', generation: 0, archive_sha256: 'A'.repeat(64),
+  } }), { code: 'LOCATOR_INVALID' })
+  assert.equal(requests, 0)
+})
+
+test('provider rejects an incomplete scope before catalog access', async () => {
+  await assert.throws(() => createRemoteProvider({
+    baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a',
+    scope: { context_id: 'ctx-a', session_id: '', access_grant_id: 'grant-a' },
+    fetchImpl: async () => ({ ok: true, json: async () => ({}) }),
+  }), { code: 'SCOPE_INVALID' })
+  await assert.rejects(synchronizeRemoteProvider({
+    baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a',
+    scope: { context_id: 'ctx-a', session_id: '', access_grant_id: 'grant-a' },
+    fetchImpl: async () => { throw new Error('network must not be reached') },
+  }), { code: 'SCOPE_INVALID' })
+})
+
 test('provider rejects a resolve response whose canonical identity changed', async () => {
   const provider = createRemoteProvider({
     baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope,

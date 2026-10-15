@@ -21,6 +21,40 @@ function hash(value) {
   return createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex')
 }
 
+const SHA256 = /^[0-9a-f]{64}$/u
+
+function validateScope(scope) {
+  for (const field of ['context_id', 'session_id', 'access_grant_id']) {
+    if (typeof scope?.[field] !== 'string' || scope[field].length === 0) {
+      const error = new Error(`Memory Lab scope is missing ${field}`)
+      error.code = 'SCOPE_INVALID'
+      throw error
+    }
+  }
+}
+
+function validateLocator(locator, scope) {
+  if (locator?.owner !== scope?.context_id) {
+    const error = new Error('candidate scope denied')
+    error.code = 'SCOPE_DENIED'
+    throw error
+  }
+  if (typeof locator.activation_id !== 'string' || locator.activation_id.length === 0
+    || typeof locator.version_id !== 'string' || locator.version_id.length === 0
+    || !Number.isInteger(locator.generation) || locator.generation < 1
+    || !SHA256.test(locator.archive_sha256)) {
+    const error = new Error('candidate locator is invalid')
+    error.code = 'LOCATOR_INVALID'
+    throw error
+  }
+  return {
+    activation_id: locator.activation_id,
+    version_id: locator.version_id,
+    generation: locator.generation,
+    archive_sha256: locator.archive_sha256,
+  }
+}
+
 async function protocolRequest({ baseUrl, serviceSecret, instanceId, runtimeId, scope, path, body, fetchImpl, signal }) {
   abortIfNeeded(signal)
   const response = await fetchImpl(runtimeUrl(baseUrl, path), {
@@ -36,6 +70,7 @@ async function protocolRequest({ baseUrl, serviceSecret, instanceId, runtimeId, 
 
 /** Pull, validate, self-check and acknowledge one exact runtime catalog. */
 export async function synchronizeRemoteProvider({ baseUrl, serviceSecret, instanceId, runtimeId, scope, fetchImpl = fetch, signal }) {
+  validateScope(scope)
   const catalog = await protocolRequest({ baseUrl, serviceSecret, instanceId, runtimeId, scope, path: '/catalog', body: undefined, fetchImpl, signal })
   const installed = []
   for (const row of catalog.items ?? []) {
@@ -70,7 +105,7 @@ export async function synchronizeRemoteProvider({ baseUrl, serviceSecret, instan
  * host integration; cwd is deliberately ignored as an identity signal.
  */
 export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runtimeId, scope, control, fetchImpl = fetch }) {
-  if (!scope?.context_id || !scope?.session_id || !scope?.access_grant_id) throw new Error('Memory Lab scope is incomplete')
+  validateScope(scope)
   const captured = Object.freeze({ ...scope })
   const headers = () => ({ accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${serviceSecret}`, 'x-dsh-instance-id': instanceId, 'x-dsh-runtime-id': runtimeId })
   const request = async (path, body, signal) => {
@@ -98,8 +133,9 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
     },
     async get(candidate, options = {}) {
       abortIfNeeded(options.signal)
-      if (candidate?.provider !== PROVIDER || candidate?.locator?.owner !== captured.context_id) { const error = new Error('candidate scope denied'); error.code = 'SCOPE_DENIED'; throw error }
-      const result = await request('/resolve', { activation_id: candidate.locator.activation_id, version_id: candidate.locator.version_id, generation: candidate.locator.generation, archive_sha256: candidate.locator.archive_sha256 }, options.signal)
+      if (candidate?.provider !== PROVIDER) { const error = new Error('candidate scope denied'); error.code = 'SCOPE_DENIED'; throw error }
+      const locator = validateLocator(candidate.locator, captured)
+      const result = await request('/resolve', locator, options.signal)
       if (result.runtime_name !== candidate.name
         || result.activation_id !== candidate.locator.activation_id
         || result.version_id !== candidate.locator.version_id
@@ -120,17 +156,7 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
 
 /** Create the server-side receipt immediately before native prompt admission. */
 function brokerLocator(scope, locator) {
-  if (locator?.owner !== scope?.context_id) {
-    const error = new Error('candidate scope denied')
-    error.code = 'SCOPE_DENIED'
-    throw error
-  }
-  return {
-    activation_id: locator.activation_id,
-    version_id: locator.version_id,
-    generation: locator.generation,
-    archive_sha256: locator.archive_sha256,
-  }
+  return validateLocator(locator, scope)
 }
 
 export async function admitInvocation({ baseUrl, serviceSecret, instanceId, runtimeId, scope, locator, invocationId, nativeRequestId, fetchImpl = fetch, signal }) {
