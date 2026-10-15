@@ -62,6 +62,7 @@ await mkdir(join(root, 'runner-a', 'seed'), { recursive: true })
 await mkdir(join(root, 'runner-b', 'seed'), { recursive: true })
 const gatewayServiceSecret = secret()
 const scopeSecret = secret()
+const clientSecret = secret()
 const registry = {
   schema_version: 1,
   public_origin: 'http://dsh-gateway:8765',
@@ -111,4 +112,21 @@ for (const [name, runtime] of [['runner-a', 'runner-a'], ['runner-b', 'runner-b'
   await put(`${name}.env`, runnerEnv.join('\n'))
 }
 await put('runtime-secrets.json', JSON.stringify(runtimeSecrets, null, 2), 0o600)
+const subjects = JSON.stringify({ 'runner-a': userA, 'runner-b': userB })
+const runtimeSecretMapping = JSON.stringify(runtimeSecrets)
+await put('memorylab-runtime.env', [
+  `AI_TOOL_RUNTIME_SECRETS_JSON=${runtimeSecretMapping}`,
+  `AI_TOOL_RUNTIME_SUBJECTS_JSON=${subjects}`,
+  'AI_DSH_CONTROL_ORIGIN=http://dsh-gateway:8765',
+  'AI_DSH_GATEWAY_ORIGIN=http://dsh-gateway:8765',
+  `AI_DSH_GATEWAY_SERVICE_SECRET=${gatewayServiceSecret}`,
+  `AI_DSH_CLIENT_SECRET=${clientSecret}`,
+  'AI_DSH_REQUIRE_SCOPED_RUNTIME=true',
+  `AI_DSH_PUBLIC_ORIGIN=${publicOrigin}`,
+  `AI_PARENT_ORIGIN=${parentOrigin}`,
+  'SKILLS_RUNTIME_ENABLED=true',
+  `MEMORYLAB_RUNTIME_VERIFY_ORIGIN=${apiOrigin}`,
+  'MEMORYLAB_RUNTIME_VERIFY_TIMEOUT_MS=5000',
+  'MEMORYLAB_RUNTIME_LIVE_CHECK_INTERVAL_MS=5000',
+].join('\n'), 0o600)
 console.log(JSON.stringify({ root, users: { a: userA, b: userB }, api_origin: apiOrigin, generated: true }, null, 2))

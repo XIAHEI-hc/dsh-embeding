@@ -15,9 +15,12 @@ embed configs, a runtime registry, and random service/scope secrets. The script
 rejects missing or placeholder subjects. Registry subjects are server-issued
 user IDs and must not come from browser fields or runner-generated values.
 
-The generated `runtime-secrets.json` is the Memory Lab control-plane mapping for
-`AI_TOOL_RUNTIME_SECRETS_JSON`; inject its JSON contents into the Memory Lab
-backend environment through the deployment secret manager. The runner credential
+The script also generates `memorylab-runtime.env`, a deployment-local backend
+env file containing the exact runtime-to-subject mapping, per-runner secrets,
+independent client/gateway secrets, `SKILLS_RUNTIME_ENABLED=true`, and the live
+verifier settings. Include that file as the backend `env_file` (or import its
+values through the deployment secret manager). `runtime-secrets.json` remains
+available as the machine-readable mapping for tooling. The runner credential
 files must never be replaced with the shared `AI_TOOL_SERVICE_SECRET`.
 
 For local A/B acceptance accounts, use a deployment-managed env file with
