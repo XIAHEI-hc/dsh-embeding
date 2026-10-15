@@ -10,7 +10,7 @@ import { WorkbenchExtensionError } from './errors.js'
 import { GrantStore } from './grants.js'
 import { bearer, method, readJson, requestId, secretEqual, writeError, writeJson } from './http.js'
 import { associateRemoteFork, registerIntegrationRoutes, rollbackRemoteFork } from './integration.js'
-import { loadRuntimeRegistry } from './runtime-registry.js'
+import { loadRuntimeRegistry, runtimeForSubject } from './runtime-registry.js'
 import { WorkspacePolicy } from './workspaces.js'
 import { enrichPagePrompt } from './page-context.js'
 import { createRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
@@ -158,6 +158,15 @@ function clientAllows(client, parentOrigin, alias) {
   if (!client.workspaceAliases.includes(alias)) throw new WorkbenchExtensionError('EMBED_SCOPE_DENIED')
 }
 
+// In embedded multi-user mode the subject is a routing identity, not a
+// caller-provided label.  Reject it before issuing a browser ticket so an
+// unknown user can never obtain a grant that later falls back to shared or
+// otherwise unprovisioned execution.
+export function requireProvisionedGrantSubject(runtimeRegistry, subject) {
+  if (runtimeRegistry === undefined) return undefined
+  return runtimeForSubject(runtimeRegistry, subject)
+}
+
 function csp(config, nonce) {
   const ancestors = config.allowedParentOrigins.join(' ')
   return `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors ${ancestors}`
@@ -211,6 +220,7 @@ function registerRoutes(ctx, config, policy, store, integration, runtimeRegistry
       const parentOrigin = oneString(body.parent_origin, 'parent_origin', 2048)
       const workspaceId = oneString(body.workspace_id, 'workspace_id')
       const subject = oneString(body.subject, 'subject', 512)
+      requireProvisionedGrantSubject(runtimeRegistry, subject)
       const workspace = await policy.checkWorkspaceId(workspaceId)
       if (workspace.alias === null) throw new WorkbenchExtensionError('EMBED_SCOPE_DENIED')
       clientAllows(client, parentOrigin, workspace.alias)

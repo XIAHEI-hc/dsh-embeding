@@ -4,6 +4,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { loadRuntimeRegistry, runtimeForSubject } from '@dsh-workbench/extensions/runtime-registry'
+import { requireProvisionedGrantSubject } from '@dsh-workbench/extensions'
 
 function file(value) {
   const root = mkdtempSync(join(tmpdir(), 'dsh-runtime-registry-'))
@@ -22,6 +23,13 @@ test('registry resolves only a ready subject', () => {
   const registry = loadRuntimeRegistry(file(base))
   assert.equal(runtimeForSubject(registry, 'user-a').runtimeId, 'runner-a')
   assert.throws(() => runtimeForSubject(registry, 'user-b'), { code: 'RUNTIME_NOT_PROVISIONED' })
+})
+
+test('multi-user grant issuance rejects an unprovisioned subject before ticket creation', () => {
+  const registry = loadRuntimeRegistry(file(base))
+  assert.equal(requireProvisionedGrantSubject(registry, 'user-a').runtimeId, 'runner-a')
+  assert.throws(() => requireProvisionedGrantSubject(registry, 'user-b'), { code: 'RUNTIME_NOT_PROVISIONED' })
+  assert.equal(requireProvisionedGrantSubject(undefined, 'external-subject'), undefined)
 })
 
 test('registry rejects duplicate subjects and invalid origins', () => {
