@@ -305,7 +305,7 @@ The continuation work is maintained on independent feature branches:
 
 | repository | branch | current automated result |
 |---|---|---|
-| DSH | `codex/dsh-memorylab-runtime-bridge` | 66 JavaScript tests passed; extension syntax check passed; standalone native Web smoke passed |
+| DSH | `codex/dsh-memorylab-runtime-bridge` | 67 JavaScript tests passed; extension syntax check passed; standalone native Web smoke passed |
 | Memory Lab | `codex/memorylab-runtime-bridge` | 91 backend tests passed; 1 existing Starlette/httpx deprecation warning; Alembic reports no new operations |
 
 The scoped deployment also passes the cross-repository runtime configuration
