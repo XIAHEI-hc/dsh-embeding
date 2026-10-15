@@ -52,6 +52,9 @@ export async function synchronizeRemoteProvider({ baseUrl, serviceSecret, instan
         || typeof resolved.instruction_sha256 !== 'string') {
         const error = new Error('resolved skill hash mismatch'); error.code = 'HASH_MISMATCH'; throw error
       }
+      if (createHash('sha256').update(resolved.instruction, 'utf8').digest('hex') !== resolved.instruction_sha256) {
+        const error = new Error('resolved instruction hash mismatch'); error.code = 'HASH_MISMATCH'; throw error
+      }
       installed.push({ ...row, locator })
     }
     await protocolRequest({
@@ -103,6 +106,10 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
         || result.generation !== candidate.locator.generation
         || result.archive_sha256 !== candidate.locator.archive_sha256) {
         const error = new Error('skill version changed'); error.code = 'SKILL_VERSION_CHANGED'; throw error
+      }
+      if (typeof result.instruction !== 'string' || typeof result.instruction_sha256 !== 'string'
+        || createHash('sha256').update(result.instruction, 'utf8').digest('hex') !== result.instruction_sha256) {
+        const error = new Error('resolved instruction hash mismatch'); error.code = 'HASH_MISMATCH'; throw error
       }
       abortIfNeeded(options.signal)
       return { name: candidate.name, description: candidate.description, source: 'memorylab', provider: PROVIDER, invocation: { userInvocable: true, modelInvocable: false }, content: result.instruction, resourceBase: { kind: 'opaque', description: '静态资源通过已授权 Memory Lab broker 提供。' }, metadata: { ...candidate.metadata, instruction_sha256: result.instruction_sha256, archive_sha256: result.archive_sha256 } }
