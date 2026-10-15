@@ -10,8 +10,26 @@ function required(value, label) {
 
 const FILE_ATTACHMENT_ID = /^sha256:([a-f0-9]{64})$/u
 
+function fileAttachmentRefFromBlock(block) {
+  // The official session contract exposes durable file references only on a
+  // `type: 'file'` content block.  Do not treat image blocks or arbitrary
+  // model content carrying an attachment-shaped object as an uploadable file.
+  if (block?.type !== 'file' || typeof block?.attachment !== 'object' || block.attachment === null) {
+    return undefined
+  }
+  const id = block.attachment.attachmentId
+  if (typeof id === 'string' && FILE_ATTACHMENT_ID.test(id)) return block.attachment
+  return undefined
+}
+
+function fileAttachmentRef(value) {
+  if (typeof value !== 'object' || value === null) return undefined
+  const id = value.attachmentId
+  return typeof id === 'string' && FILE_ATTACHMENT_ID.test(id) ? value : undefined
+}
+
 function attachmentIdFromBlock(block) {
-  const id = block?.attachment?.attachmentId ?? block?.attachmentId
+  const id = fileAttachmentRefFromBlock(block)?.attachmentId
   return typeof id === 'string' && FILE_ATTACHMENT_ID.test(id) ? id : undefined
 }
 
@@ -22,7 +40,7 @@ function sessionAttachmentRefs(exec) {
   for (const entry of window?.entries ?? []) {
     const content = entry?.event?.data?.message?.content
     for (const block of content ?? []) {
-      const ref = block?.attachment
+      const ref = fileAttachmentRefFromBlock(block)
       const id = attachmentIdFromBlock(block)
       if (id !== undefined) refs.set(id, ref)
     }
@@ -30,9 +48,9 @@ function sessionAttachmentRefs(exec) {
   const pending = session?.getSnapshot?.()?.pendingSubmissions ?? []
   for (const submission of pending) {
     for (const attachment of submission.attachments ?? []) {
-      const ref = attachment.value ?? attachment
-      const id = attachmentIdFromBlock(ref)
-      if (id !== undefined) refs.set(id, ref)
+      if (attachment?.type !== 'file') continue
+      const ref = fileAttachmentRef(attachment.value)
+      if (ref !== undefined) refs.set(ref.attachmentId, ref)
     }
   }
   return refs

@@ -29,6 +29,15 @@ function execWithFile(ref) {
   }
 }
 
+function execWithPendingFile(ref) {
+  return {
+    agent: { session: {
+      header: { id: 'session-a' },
+      getSnapshot: () => ({ pendingSubmissions: [{ attachments: [{ type: 'file', value: ref }] }] }),
+    } },
+  }
+}
+
 test('Memory Lab query scope comes only from the bound DSH session', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'memorylab-attachments-'))
   const store = { requireActive(id) {
@@ -121,5 +130,46 @@ test('Memory Lab upload accepts only a CSV inside the DSH attachment store', asy
   assert.equal(uploaded, true)
   await assert.rejects(client(root, store).upload(outside, execWithFile(ref)), /FILE_NOT_ALLOWED|ATTACHMENT_SESSION_MISMATCH/u)
   await assert.rejects(client(root, store).upload({ attachmentId: `sha256:${'b'.repeat(64)}` }, execWithFile(ref)), /ATTACHMENT_SESSION_MISMATCH/u)
+})
+
+test('Memory Lab upload reads official file blocks and pending submission references only', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'memorylab-attachments-'))
+  const csvContent = 'CHN,BG,BANK,Row,Col\n0,0,0,1,2\n'
+  const digest = createHash('sha256').update(csvContent).digest('hex')
+  const ref = { attachmentId: `sha256:${digest}`, name: 'pending.csv', bytes: Buffer.byteLength(csvContent) }
+  const nested = join(root, digest.slice(0, 2), digest)
+  mkdirSync(nested, { recursive: true })
+  writeFileSync(join(nested, ref.name), csvContent)
+  const store = { requireActive() { return { contextId: 'context-a', instanceId: 'memorylab-dsh', accessGrantId: 'grant-a' } } }
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  t.mock.method(globalThis, 'fetch', async (_url, options) => {
+    assert.equal(options.body.get('session_id'), 'session-a')
+    return new Response(JSON.stringify({ ok: true, data: { job_id: 'job-pending' } }), {
+      status: 202, headers: { 'content-type': 'application/json' },
+    })
+  })
+
+  // The official durable transcript shape is a `type: file` block.
+  const transcriptExec = execWithFile(ref)
+  assert.equal((await client(root, store).upload({ attachmentId: ref.attachmentId }, transcriptExec)).data.job_id, 'job-pending')
+
+  // The official pending submission shape is `{ type: 'file', value: ref }`.
+  const pendingExec = execWithPendingFile(ref)
+  assert.equal((await client(root, store).upload({ attachmentId: ref.attachmentId }, pendingExec)).data.job_id, 'job-pending')
+
+  // An image block must never become a file upload reference, even if it has
+  // a file-looking name and digest-shaped attachment id.
+  const imageExec = {
+    agent: { session: {
+      header: { id: 'session-a' },
+      eventSource: { getSnapshot: () => ({ entries: [{ event: {
+        data: { message: { content: [{ type: 'image', attachment: ref }] } },
+      } }] }) },
+    } },
+  }
+  await assert.rejects(
+    client(root, store).upload({ attachmentId: ref.attachmentId }, imageExec),
+    /ATTACHMENT_SESSION_MISMATCH/u,
+  )
 })
 
