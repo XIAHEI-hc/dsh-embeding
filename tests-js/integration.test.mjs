@@ -110,6 +110,8 @@ test('Memory Lab binding retains the exact login grant for provider scope', () =
     assert.equal(store.requireActive('session-user').accessGrantId, 'grant-a')
     assert.equal(store.revokeContext('context-user', 'memorylab'), 1)
     assert.equal(store.bind({ ...request, metadata: { ...request.metadata, access_grant_id: 'grant-b' } }).accessGrantId, 'grant-b')
+    assert.equal(store.revokeBinding('session-user', 'memorylab'), 1)
+    assert.throws(() => store.requireActive('session-user'), { code: 'CONTEXT_REVOKED' })
   } finally { store.close(); f.close() }
 })
 

@@ -312,6 +312,14 @@ export class IntegrationStore {
     return result.changes
   }
 
+  revokeBinding(sessionId, clientId) {
+    const result = this.db.prepare(`UPDATE integration_bindings
+      SET status = 'revoked', updated_at = ?
+      WHERE session_id = ? AND client_id = ? AND status = 'active'`
+    ).run(this.now(), sessionId, clientId)
+    return result.changes
+  }
+
   removeUnmaterializedBinding(sessionId, { contextId, clientId } = {}) {
     const clauses = ['session_id = ?']
     const values = [sessionId]

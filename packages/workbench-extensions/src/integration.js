@@ -104,6 +104,23 @@ export async function verifySessionContext(config, contextId, sessionId, accessG
   } finally { clearTimeout(timeout) }
 }
 
+async function rebindOnlyAfterGrantRevocation(store, config, clientId, sessionId, accessGrantId) {
+  if (config.integrationKind !== 'memorylab' || accessGrantId === undefined) return
+  const existing = store.binding(sessionId)
+  if (existing === undefined || existing.clientId !== clientId
+    || existing.accessGrantId === undefined || existing.accessGrantId === accessGrantId
+    || existing.status !== 'active') return
+  let oldGrantStillValid = false
+  try {
+    await verifySessionContext(config, existing.contextId, sessionId, existing.accessGrantId)
+    oldGrantStillValid = true
+  } catch (error) {
+    if (error?.code !== 'CONTEXT_REVOKED') throw error
+  }
+  if (oldGrantStillValid) throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+  store.revokeBinding(sessionId, clientId)
+}
+
 async function remoteForkRequest(config, path, body, signal) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(new Error('fork association timeout')), config.verifyTimeoutMs)
@@ -248,6 +265,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
       await requireBindableSession(
         ctx, policy, workspace.workspace_id, sessionId, contextId, client.clientId, store, undefined, pageSurface,
       )
+      await rebindOnlyAfterGrantRevocation(store, config, client.clientId, sessionId, accessGrantId)
       const result = store.completePrepare({
         clientId: client.clientId,
         requestId: integrationRequestId,
@@ -294,6 +312,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
       await requireBindableSession(
         ctx, policy, workspaceId, sessionId, contextId, client.clientId, store, parentSessionId,
       )
+      await rebindOnlyAfterGrantRevocation(store, config, client.clientId, sessionId, accessGrantId)
       const binding = store.bind({
         clientId: client.clientId,
         contextId,
