@@ -72,6 +72,38 @@ async function verifyContext(config, contextId, signal, runtimeRegistry, accessG
   }
 }
 
+export async function verifySessionContext(config, contextId, sessionId, accessGrantId, signal) {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(new Error('session verify timeout')), config.verifyTimeoutMs)
+  const combined = signal === undefined ? controller.signal : AbortSignal.any([signal, controller.signal])
+  try {
+    const response = await fetch(`${config.apiOrigin}/api/ai/contexts/${encodeURIComponent(contextId)}/sessions/${encodeURIComponent(sessionId)}/verify`, {
+      headers: {
+        accept: 'application/json',
+        authorization: `Bearer ${config.toolSecret}`,
+        'x-dsh-instance-id': config.instanceId,
+        'x-dsh-access-grant-id': accessGrantId,
+        ...(config.runtimeId === undefined ? {} : { 'x-dsh-runtime-id': config.runtimeId }),
+      },
+      method: 'GET',
+      signal: combined,
+    })
+    const body = await response.json().catch(() => undefined)
+    if (!response.ok || body?.ok !== true || body.scope?.context_id !== contextId
+      || body.scope?.session_id !== sessionId || body.scope?.access_grant_id !== accessGrantId
+      || body.scope?.dsh_instance_id !== config.instanceId) {
+      if (response.status === 401 || response.status === 403 || body?.error?.code === 'CONTEXT_REVOKED') {
+        throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+      }
+      throw new WorkbenchExtensionError('INTEGRATION_UPSTREAM_UNAVAILABLE')
+    }
+    return body.scope
+  } catch (error) {
+    if (error instanceof WorkbenchExtensionError) throw error
+    throw new WorkbenchExtensionError('INTEGRATION_UPSTREAM_UNAVAILABLE', { cause: error })
+  } finally { clearTimeout(timeout) }
+}
+
 async function remoteForkRequest(config, path, body, signal) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(new Error('fork association timeout')), config.verifyTimeoutMs)
@@ -309,6 +341,10 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
       if (binding === undefined) throw new WorkbenchExtensionError('CONTEXT_NOT_BOUND')
       if (binding.clientId !== client.clientId) throw new WorkbenchExtensionError('EMBED_SCOPE_DENIED')
       policy.requireSession(binding.workspaceId, sessionId)
+      if (config.integrationKind === 'memorylab') {
+        if (binding.accessGrantId === undefined) throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+        await verifySessionContext(config, binding.contextId, sessionId, binding.accessGrantId)
+      }
       writeJson(res, 200, {
         context_id: binding.contextId,
         workspace_id: binding.workspaceId,

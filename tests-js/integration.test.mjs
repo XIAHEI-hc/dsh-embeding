@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import { isBindableInspection } from '../packages/workbench-extensions/src/integration.js'
+import { verifySessionContext } from '../packages/workbench-extensions/src/integration.js'
 import { durableUsagePayload } from '../packages/workbench-extensions/src/index.js'
 import { normalizePageSurface } from '../packages/workbench-extensions/src/page-surface.js'
 import { IntegrationStore, requestHash } from '@dsh-workbench/extensions/integration-store'
@@ -284,4 +285,27 @@ test('durable usage retries keep the original occurred_at fingerprint', () => {
   assert.equal(first.eventId, 'event-a')
   assert.equal(first.occurredAt, '2026-10-15T10:00:00.000Z')
   assert.deepEqual(replay, first)
+})
+
+test('Memory Lab session status verifier binds context, session, grant, and instance', async () => {
+  const originalFetch = globalThis.fetch
+  let requested
+  globalThis.fetch = async (url, options) => {
+    requested = { url, options }
+    return new Response(JSON.stringify({ ok: true, scope: {
+      context_id: 'context-a', session_id: 'session-a', access_grant_id: 'grant-a',
+      dsh_instance_id: 'instance-a',
+    } }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  try {
+    const result = await verifySessionContext({
+      apiOrigin: 'http://memorylab.test', instanceId: 'instance-a', toolSecret: 's'.repeat(32),
+      verifyTimeoutMs: 1000,
+    }, 'context-a', 'session-a', 'grant-a')
+    assert.equal(result.session_id, 'session-a')
+    assert.match(requested.url, /\/contexts\/context-a\/sessions\/session-a\/verify$/u)
+    assert.equal(requested.options.headers['x-dsh-access-grant-id'], 'grant-a')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
