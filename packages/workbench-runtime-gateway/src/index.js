@@ -64,7 +64,11 @@ function scopeProof(scope, runtime) {
 }
 
 async function verifyLiveScope(scope, runtime, verifyOrigin, hostInstanceId, timeoutMs = 5000, fetchImpl = fetch) {
-  if (!verifyOrigin) return { ok: true }
+  // Embedded multi-user mode must always have a live control-plane verifier.
+  // Treating a missing origin as success turns a stale scope cookie into a
+  // bearer credential that survives logout, grant revoke, and permission
+  // changes.  Fail closed before touching the runner.
+  if (!verifyOrigin) return { ok: false, error: 'RUNTIME_UNAVAILABLE' }
   const secret = runtimeControlSecret(runtime)
   if (!secret || !scope.context_id || !scope.session_id || !scope.access_grant_id) return { ok: false, error: 'SCOPE_DENIED' }
   const controller = new AbortController()

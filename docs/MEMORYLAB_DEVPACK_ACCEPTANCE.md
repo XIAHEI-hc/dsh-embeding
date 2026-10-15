@@ -214,3 +214,28 @@ gateway health was ready before the runner target was ready. The probe now
 waits for the scoped root itself, so the final result measures the real
 user-scoped path rather than only a listener health check. No volume or
 database was removed.
+
+## 2026-10-15 continuation: live WebSocket revoke
+
+The first WebSocket probe found that the private gateway container did not
+receive `MEMORYLAB_RUNTIME_VERIFY_ORIGIN`; the old implementation treated a
+missing verifier as success. That was a fail-open deployment defect. The
+gateway now fails closed when the verifier is absent, the private env supplies
+`http://memorylab-api:9000`, and the private compose template pins the host
+port to the `8875` origin advertised by Memory Lab.
+
+With the corrected deployment, a real A scoped WebSocket on
+`/api/remote.mux` was opened, the owning Memory Lab login was logged out, and
+the gateway closed the socket on its 5-second live check. The same old scope
+cookie then received HTTP `403`:
+
+```text
+logout_status                    204
+closed_after_logout              true
+close_elapsed_seconds            5.13
+scoped_http_after_logout_status  403
+```
+
+The native WebSocket close code was `1006` because the gateway destroys the
+socket after the lease check fails; the security result is the close itself and
+the subsequent `403` fence.

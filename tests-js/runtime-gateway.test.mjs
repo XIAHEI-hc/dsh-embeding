@@ -107,8 +107,11 @@ test('gateway preserves the Connection: Upgrade header for native WebSocket clie
     { subject: 'user-a', runtime_id: 'runner-a', internal_origin: `http://127.0.0.1:${upstreamAddress.port}`, control_secret_file: runtimeSecretPath, status: 'ready' },
   ] }))
   const previous = process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN
-  delete process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN
-  const gateway = createRuntimeGateway({ registryPath, scopeSecret: 'scope-secret', serviceSecret: 'service-secret' })
+  process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN = 'http://memorylab.test'
+  const gateway = createRuntimeGateway({
+    registryPath, scopeSecret: 'scope-secret', serviceSecret: 'service-secret',
+    fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+  })
   await new Promise(resolve => gateway.server.listen(0, '127.0.0.1', resolve))
   const address = gateway.server.address()
   const base = `http://127.0.0.1:${address.port}`
