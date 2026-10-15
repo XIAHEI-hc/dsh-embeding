@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import { isBindableInspection } from '../packages/workbench-extensions/src/integration.js'
+import { durableUsagePayload } from '../packages/workbench-extensions/src/index.js'
 import { normalizePageSurface } from '../packages/workbench-extensions/src/page-surface.js'
 import { IntegrationStore, requestHash } from '@dsh-workbench/extensions/integration-store'
 
@@ -274,4 +275,13 @@ test('usage outbox survives restart and deduplicates stable event ids', () => {
     assert.deepEqual(store.pendingUsage(), [])
     store.close()
   } finally { f.close() }
+})
+
+test('durable usage retries keep the original occurred_at fingerprint', () => {
+  const payload = { invocationId: 'invocation-a', phase: 'completed' }
+  const first = durableUsagePayload(payload, 'event-a', '2026-10-15T10:00:00.000Z')
+  const replay = durableUsagePayload(first, first.eventId, '2026-10-15T10:05:00.000Z')
+  assert.equal(first.eventId, 'event-a')
+  assert.equal(first.occurredAt, '2026-10-15T10:00:00.000Z')
+  assert.deepEqual(replay, first)
 })

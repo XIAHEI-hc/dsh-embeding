@@ -95,9 +95,15 @@ async function admitRemotePrompt(integration, config, request, admittedPrompts, 
  * Lab.  `required` is used for loaded: without an accepted loaded fact the
  * native turn must not proceed as if the instruction had been observed.
  */
+export function durableUsagePayload(payload, eventId = payload.eventId ?? randomUUID(), occurredAt = new Date().toISOString()) {
+  // Persist the complete idempotency body together with event_id. Memory Lab
+  // fingerprints occurred_at on replay; generating a fresh default timestamp
+  // during every drain would turn a retry into an idempotency conflict.
+  return { ...payload, eventId, occurredAt: payload.occurredAt ?? occurredAt }
+}
+
 async function recordUsageDurably(integration, config, payload, { signal, required = false } = {}) {
-  const eventId = payload.eventId ?? randomUUID()
-  const durable = { ...payload, eventId }
+  const durable = durableUsagePayload(payload)
   try {
     const result = await recordUsage({
       ...durable, baseUrl: config.apiOrigin, serviceSecret: config.toolSecret,

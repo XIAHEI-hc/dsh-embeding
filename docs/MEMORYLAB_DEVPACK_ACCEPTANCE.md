@@ -9,7 +9,7 @@
 
 | 范围 | 证据 |
 |---|---|
-| DSH 扩展回归 | `npm run test:extensions`：51/51 通过；包含 live Memory Lab lease verify、页面上下文 enrichment、延迟 provider 注册、fork rollback、重启后 active binding 扫描、usage outbox 重启恢复/稳定 event id 去重和 canonical skill identity mismatch 拒绝。 |
+| DSH 扩展回归 | `npm run test:extensions`：53/53 通过；包含 live Memory Lab lease verify、页面上下文 enrichment、延迟 provider 注册、fork rollback、重启后 active binding 扫描、usage outbox 重启恢复/稳定 event id 与 `occurred_at` 指纹、以及 canonical skill identity mismatch 拒绝。 |
 | Memory Lab 后端回归 | `PYTHONUTF8=1; python -m pytest -q`：71/71 通过；覆盖 immutable page snapshot、native prompt 幂等、BF MATCH/FAIL、CHN section_detail 半开区间、trusted shared service auth 和 context/login revoke 后 terminal usage；Windows 退出清理阶段的 SQLite `WinError 32` 不影响 pytest 返回码 0。 |
 | Memory Lab 前端 | `npm run typecheck`、`npm run build` 均通过（既有验收记录）。 |
 | 协议契约 | DevPack `python acceptance/check_contracts.py`：6 个合法示例通过，2 个伪造 scope 被拒绝。脚本已显式使用 UTF-8，避免 Windows GBK 环境误报。 |
@@ -30,7 +30,7 @@
 | scoped runtime credential fence | `AI_DSH_REQUIRE_SCOPED_RUNTIME=true` 时，全局 control secret 不再能用于带 runtime ID 的 runtime data-plane 请求；只有对应 runner credential 能通过，真实 runner-a catalog 仍返回 200。 |
 | queued skill terminal fact | queued `/ml-*` 在切版、停用、revoke 或正文加载失败时，会消费对应 admission queue 并写 `failed`/`cancelled` usage 终态，不再遗留 `admitted`。 |
 | terminal usage after revoke | 已准入 receipt 在 context、login grant 或权限撤销后仍可通过窄权限路径写入 `completed`/`failed`/`cancelled`；目录、resolve、admit 仍拒绝；同 `event_id` 改变 occurred_at/error_code/turn_ref 会返回 `IDEMPOTENCY_CONFLICT`。 |
-| usage outbox recovery | DSH integration SQLite 持久化脱敏 usage payload；broker 暂时失败会以相同 `event_id` 重试，重启后仍可 drain；终态 phase 冲突不会永久阻塞队列。 |
+| usage outbox recovery | DSH integration SQLite 持久化脱敏 usage payload；broker 暂时失败时保留 pending、递增 attempts，重启后用相同 `event_id` 与固定 `occurred_at` 重试；真实 runner/backend 故障实验最终在 Memory Lab 写入 `acceptance-outbox-recovery-20261015-v2` 的 `completed` event，并确认 runner outbox 删除。 |
 | latest deployment | 通过 WSL2 Ubuntu Docker 重建并强制重启 `dsh-gateway`、`dsh-user-a`、`dsh-user-b`；三者 healthy/running，A/B 仍分别挂载 `dsh-workbench_user-a-data` 与 `dsh-workbench_user-b-data`，未执行 `down -v`。Memory Lab backend/frontend 亦已重建/运行。 |
 | 跨 runtime 拒绝 | B 使用 A 的 context/session/grant 重放 catalog、resolve、admit、usage、ack 均得到 `403 SCOPE_DENIED`。 |
 | live revoke | logout 前旧 scope cookie 访问带 channel 的 embed 为 200；logout 后同一 cookie 为 403。无 scope cookie 的 embed/API 请求为 401。 |
@@ -183,9 +183,31 @@ private runner compose after the runtime bridge changes.
   `71 passed` with the existing Windows SQLite cleanup warning.
 
 These results add evidence for ISO-01/02/04/06/07/15 and SKL-07/SKL-15/SKL-16,
-but do not mark the remaining browser WebSocket, restart, outbox-failure,
-fork-rollback, and full version-switch matrix as complete. Those cases still
-require their corresponding live evidence.
+but do not mark the remaining browser WebSocket, fork-rollback, and full
+version-switch matrix as complete. Those cases still require their
+corresponding live evidence.
+
+## 2026-10-15 continuation: real usage outbox failure and drain
+
+The DSH durable usage payload now persists `occurredAt` at the moment the
+event is first created. A retry therefore reuses the complete Memory Lab
+idempotency fingerprint instead of generating a new timestamp during drain.
+The regression suite includes a replay test for this invariant.
+
+The live probe used a current A-user grant and a newly admitted receipt. The
+Memory Lab backend was stopped, the event was inserted into runner-a's real
+`probe-integration.sqlite3`, and runner-a was restarted. The event remained
+pending and its `attempts` increased from `0` to `2`. After the backend was
+started again, a runner restart drained the same event. The outbox query then
+returned no row, and the Memory Lab database contained:
+
+```text
+event_id: acceptance-outbox-recovery-20261015-v2
+phase:    completed
+```
+
+The experiment did not remove any volume or database. Temporary probe rows and
+local helper files were removed after the observation.
 
 ## 2026-10-15 continuation: restart recovery probe
 
