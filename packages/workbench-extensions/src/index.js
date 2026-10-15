@@ -439,6 +439,14 @@ export async function apply(ctx) {
   }
   const agentProviders = new WeakMap()
   const agentInvocations = new WeakMap()
+  // Terminal usage must be claimed before the async broker call.  Otherwise
+  // `agent/turn-stopping` and `agent/error` can observe the same list and race
+  // to report completed plus failed/cancelled for one receipt.
+  const takeAgentInvocations = agent => {
+    const invocations = agentInvocations.get(agent) ?? []
+    agentInvocations.delete(agent)
+    return invocations
+  }
   const admittedPrompts = new Map()
   const sessionProviders = new Map()
   const registeredProviders = new WeakSet()
@@ -645,7 +653,7 @@ export async function apply(ctx) {
       } catch (error) { throw policy.asRemote(error) }
     }, { global: true })
     ctx.on('agent/turn-stopping', async ({ agent, signal }) => {
-      const invocations = agentInvocations.get(agent) ?? []
+      const invocations = takeAgentInvocations(agent)
       const installed = agentProviders.get(agent)
       if (invocations.length === 0 || installed === undefined) return
       try {
@@ -654,10 +662,9 @@ export async function apply(ctx) {
           invocationId: invocation.invocationId, nativeRequestId: invocation.nativeRequestId, phase: 'completed',
         }, { signal })
       } catch { /* usage outbox/retry is owned by the runtime bridge */ }
-      agentInvocations.delete(agent)
     }, { global: true })
     ctx.on('agent/error', ({ agent, error }) => {
-      const invocations = agentInvocations.get(agent) ?? []
+      const invocations = takeAgentInvocations(agent)
       const installed = agentProviders.get(agent)
       if (invocations.length === 0 || installed === undefined) return
       const cancelled = error?.name === 'AbortError'
@@ -669,7 +676,6 @@ export async function apply(ctx) {
         invocationId: invocation.invocationId, nativeRequestId: invocation.nativeRequestId,
         phase: cancelled ? 'cancelled' : 'failed', errorCode: error?.code,
       }))).catch(() => {})
-      agentInvocations.delete(agent)
     }, { global: true })
   }
   const disposeRoutes = registerRoutes(
