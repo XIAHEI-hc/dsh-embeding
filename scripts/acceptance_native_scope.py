@@ -107,10 +107,42 @@ async def main_async():
 
     a_files = await remote_call(a_cookie, "workspaceFiles/list", {"workspaceFileScopeId": a_session, "path": "."})
     require(a_files["ok"], "A cannot list its own workspace")
+    a_listing = a_files["items"][0] if a_files["items"] else {}
+    a_entries = a_listing.get("entries") or a_listing.get("items") or []
+    a_file = next((entry.get("path") or entry.get("name") for entry in a_entries
+                   if isinstance(entry, dict) and entry.get("type") not in {"directory", "dir"}), None)
+    if a_file:
+        a_read = await remote_call(a_cookie, "workspaceFiles/read", {
+            "workspaceFileScopeId": a_session, "path": a_file, "range": {"offset": 0, "limit": 4096},
+        })
+        require(a_read["ok"], "A cannot read its own workspace file")
+    else:
+        a_read = {"ok": True, "skipped": True}
     b_files_a = await remote_call(b_cookie, "workspaceFiles/list", {"workspaceFileScopeId": a_session, "path": "."})
     require(not b_files_a["ok"], "B read A's workspace files")
+    b_read_a = await remote_call(b_cookie, "workspaceFiles/read", {
+        "workspaceFileScopeId": a_session, "path": a_file or "README.md", "range": {"offset": 0, "limit": 128},
+    })
+    require(not b_read_a["ok"], "B read A's workspace file")
     b_terminal_a = await remote_call(b_cookie, "terminal/list", {"sessionId": a_session})
     require(not b_terminal_a["ok"], "B listed A's terminals")
+
+    a_cancel = await remote_call(a_cookie, "session/cancel", {"sessionId": a_session})
+    require(a_cancel["ok"], "A cannot cancel its own session")
+    b_cancel_a = await remote_call(b_cookie, "session/cancel", {"sessionId": a_session})
+    require(not b_cancel_a["ok"], "B cancelled A's session")
+
+    terminal_id = "scope-probe-" + uuid.uuid4().hex
+    a_terminal = await remote_call(a_cookie, "terminal/create", {
+        "agentId": a_session, "request": {"id": terminal_id, "cols": 80, "rows": 24},
+    })
+    require(a_terminal["ok"], "A cannot create its own terminal")
+    b_create_a_terminal = await remote_call(b_cookie, "terminal/create", {
+        "agentId": a_session, "request": {"id": "foreign-" + uuid.uuid4().hex, "cols": 80, "rows": 24},
+    })
+    require(not b_create_a_terminal["ok"], "B created a terminal in A's session")
+    a_close_terminal = await remote_call(a_cookie, "terminal/close", {"agentId": a_session, "id": terminal_id})
+    require(a_close_terminal["ok"], "A cannot close its own terminal")
 
     print(json.dumps({
         "result": "PASS",
@@ -125,8 +157,15 @@ async def main_async():
         "a_fork_status": a_fork["ok"],
         "b_fork_a_rejected": not b_fork_a["ok"],
         "a_workspace_list_status": a_files["ok"],
+        "a_workspace_read_status": a_read["ok"],
         "b_workspace_read_a_rejected": not b_files_a["ok"],
+        "b_workspace_file_read_a_rejected": not b_read_a["ok"],
         "b_terminal_read_a_rejected": not b_terminal_a["ok"],
+        "a_cancel_status": a_cancel["ok"],
+        "b_cancel_a_rejected": not b_cancel_a["ok"],
+        "a_terminal_create_status": a_terminal["ok"],
+        "b_terminal_create_a_rejected": not b_create_a_terminal["ok"],
+        "a_terminal_close_status": a_close_terminal["ok"],
     }, ensure_ascii=False, indent=2))
 
 
