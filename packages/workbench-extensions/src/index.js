@@ -12,6 +12,7 @@ import { bearer, method, readJson, requestId, secretEqual, writeError, writeJson
 import { associateRemoteFork, registerIntegrationRoutes, rollbackRemoteFork } from './integration.js'
 import { loadRuntimeRegistry } from './runtime-registry.js'
 import { WorkspacePolicy } from './workspaces.js'
+import { enrichPagePrompt } from './page-context.js'
 import { createRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
 import { admitInvocation, recordUsage, synchronizeRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
 
@@ -22,10 +23,11 @@ const PROTOCOL = 'dsh.embed'
 const VERSION = '1.0'
 const BASE_CAPABILITIES = Object.freeze(['workspace_open', 'session_open', 'draft_prompt'])
 
-function capabilities(integration, multiUser = false) {
+function capabilities(integration, multiUser = false, pageContextEnabled = false) {
   return integration === undefined
     ? BASE_CAPABILITIES
-    : Object.freeze([...BASE_CAPABILITIES, 'integration_context', 'session_navigation_events', 'session_lifecycle_events', ...(multiUser ? ['scoped_runtime'] : [])])
+    : Object.freeze([...BASE_CAPABILITIES, 'integration_context', 'session_navigation_events', 'session_lifecycle_events',
+      ...(multiUser ? ['scoped_runtime'] : []), ...(pageContextEnabled ? ['page_context_v1', 'compact_chat_v1'] : [])])
 }
 
 function oneString(value, label, max = 256) {
@@ -164,10 +166,10 @@ function verifyAuthenticated(connection, req) {
   throw new WorkbenchExtensionError(rejection === 401 ? 'EMBED_CLIENT_UNAUTHORIZED' : 'EMBED_ORIGIN_DENIED')
 }
 
-function registerRoutes(ctx, config, policy, store, integration, runtimeRegistry) {
+function registerRoutes(ctx, config, policy, store, integration, runtimeRegistry, pageContextEnabled = false) {
   const route = (path, handler) => ctx.webServer.register({ kind: 'exact', path, handler })
   const disposers = []
-  const advertisedCapabilities = capabilities(integration, runtimeRegistry !== undefined)
+  const advertisedCapabilities = capabilities(integration, runtimeRegistry !== undefined, pageContextEnabled)
 
   disposers.push(route('/embed/health/ready', (req, res) => {
     const id = requestId(req)
@@ -422,6 +424,13 @@ export async function apply(ctx) {
   const integration = integrationConfig === undefined
     ? undefined
     : registerIntegrationRoutes(ctx, integrationConfig, policy, req => findClient(embedConfig, req), runtimeRegistry)
+  if (integrationConfig?.integrationKind === 'memorylab' && integrationConfig.pageContextEnabled === true) {
+    ctx.on('api-session/prompt-enrichment', async (request, next) => {
+      const enriched = await enrichPagePrompt(integration, integrationConfig, request)
+      if (enriched !== undefined) request.content = enriched.content
+      return next()
+    }, { global: true })
+  }
   const agentProviders = new WeakMap()
   const agentInvocations = new WeakMap()
   const admittedPrompts = new Map()
@@ -646,7 +655,10 @@ export async function apply(ctx) {
       agentInvocations.delete(agent)
     }, { global: true })
   }
-  const disposeRoutes = registerRoutes(ctx, embedConfig, policy, store, integration, runtimeRegistry)
+  const disposeRoutes = registerRoutes(
+    ctx, embedConfig, policy, store, integration, runtimeRegistry,
+    integrationConfig?.pageContextEnabled === true,
+  )
   const cleanup = setInterval(() => store.cleanup(), 60_000)
   cleanup.unref()
   ctx.effect(() => () => {

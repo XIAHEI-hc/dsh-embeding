@@ -9,8 +9,8 @@
 
 | 范围 | 证据 |
 |---|---|
-| DSH 扩展回归 | `npm run test:extensions`：46/46 通过；包含 live Memory Lab lease verify、延迟 provider 注册、fork rollback、重启后 active binding 扫描、usage outbox 重启恢复/稳定 event id 去重和 canonical skill identity mismatch 拒绝。 |
-| Memory Lab 后端回归 | `PYTHONPATH=backend; python -m pytest -q backend/tests`：66/66 通过；覆盖 context/login revoke 后 terminal usage 以及同 `event_id` 的完整业务 payload replay 冲突；Windows 退出清理阶段的 SQLite `WinError 32` 不影响 pytest 返回码 0。 |
+| DSH 扩展回归 | `npm run test:extensions`：51/51 通过；包含 live Memory Lab lease verify、页面上下文 enrichment、延迟 provider 注册、fork rollback、重启后 active binding 扫描、usage outbox 重启恢复/稳定 event id 去重和 canonical skill identity mismatch 拒绝。 |
+| Memory Lab 后端回归 | `PYTHONUTF8=1; python -m pytest -q`：71/71 通过；覆盖 immutable page snapshot、native prompt 幂等、BF MATCH/FAIL、CHN section_detail 半开区间、trusted shared service auth 和 context/login revoke 后 terminal usage；Windows 退出清理阶段的 SQLite `WinError 32` 不影响 pytest 返回码 0。 |
 | Memory Lab 前端 | `npm run typecheck`、`npm run build` 均通过（既有验收记录）。 |
 | 协议契约 | DevPack `python acceptance/check_contracts.py`：6 个合法示例通过，2 个伪造 scope 被拒绝。脚本已显式使用 UTF-8，避免 Windows GBK 环境误报。 |
 | 双 runtime 部署 | `docker ps` 显示 `dsh-user-a`、`dsh-user-b`、`dsh-gateway`、`private_mem_lab-backend` 正常运行；runtime registry 将 `runner-a`、`runner-b` 指向不同 subject、origin 和私有数据目录。 |
@@ -84,9 +84,10 @@ The local Chromium browser also completed both real local login flows. The A
 workbench rendered the official DSH iframe under `Acceptance-A`; a separate
 browser tab rendered a different session tree and the official DSH iframe under
 `Acceptance-B`. The B tab did not inherit A's Memory Lab identity or browser
-scope. The official model configuration overlay was visible because no model
-secret has been supplied, so this browser evidence intentionally stops before a
-turn is sent.
+scope. The current runner deployment has non-empty model credential files, but
+this record contains no captured model request, model response, admission, or
+terminal usage evidence, so the browser evidence intentionally stops before a
+turn is counted as L4.
 
 This is stronger than the previous single mock-principal smoke, but it is still
 an HTTP/runtime isolation check. It does not by itself prove the browser's full
@@ -127,3 +128,29 @@ python acceptance/check_contracts.py
 ```
 
 不要使用 `docker compose down -v`；验收和回滚必须保留用户卷、runtime registry、secret 和 `.dsh-tmp/`。
+
+## 2026-10-15 Page Assistant 增量证据
+
+本轮在两个真实工作树上继续落地 DevPack 的页面上下文 S0。DSH 侧完成并验证：
+
+- 官方 `api-session/prompt-enrichment` seam 保留原生消息、附件、流式、Stop、queue、steer 和会话恢复。
+- 每条 native prompt 固定 `native_prompt_id`，并通过 `dsh.page/1.0` 请求当前 `snapshot_id` 与 digest。
+- Host 通过 Memory Lab internal endpoint 重新读取 canonical snapshot，重新计算 SHA-256，digest 或 session/surface/grant/runtime 不匹配时 fail closed。
+- 官方 client session 绑定使用 `ctx.sessions.binding(sessionId)?.session`；embed smoke 曾捕获旧接口回归，修复后 smoke 通过。
+
+Memory Lab 侧完成并验证：
+
+- snapshot 只由正式 BF/CHN loader、view 和 preview 事实生成；loading/error 状态不生成 snapshot。
+- BF FAIL 单文件来源、CHN `section_detail` 的 `row_min` 包含 / `row_max` 不包含、revision mismatch、snapshot retention、native prompt 幂等均有后端测试。
+- `PageAssistant` 在 surface/session/context 变化时取消旧异步请求，旧响应不会回发到新 iframe；bridge 额外校验消息 session 一致性。
+- 前端 `npm run typecheck` 和 `npm run build` 均通过，Vite dev 容器通过 HMR 加载最新文件。
+
+当前运行证据：
+
+- `GET http://127.0.0.1:8766/embed/health/ready`：200。
+- `GET http://127.0.0.1:9000/api/platform/health`：200。
+- embed capability 包含 `page_context_v1` 与 `compact_chat_v1`。
+- `runner-a`、`runner-b` 的模型 key 文件路径均存在且非空；只验证存在性，不读取密钥内容。
+- `npm run test:embed`：通过，覆盖官方 workspace、一次性 ticket、cookie、iframe 协议、connection、draft-only prompt 和同 session reload。
+
+以下仍明确标记为未测/受阻：真实登录后的 BF/CHN 逐页 L4、真实 provider input 与模型回答三段证据、真实模型 Skill load/usage、以及需要真实浏览器会话的跨标签/queue/steer/Stop/恢复矩阵。当前数据库中的既有 `admin` 密码与 `.env` 配置不匹配；未重置、创建或绕过认证账号。

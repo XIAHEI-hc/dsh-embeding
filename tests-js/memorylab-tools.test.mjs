@@ -21,13 +21,14 @@ test('Memory Lab query scope comes only from the bound DSH session', async (t) =
   const root = mkdtempSync(join(tmpdir(), 'memorylab-attachments-'))
   const store = { requireActive(id) {
     assert.equal(id, 'session-a')
-    return { contextId: 'context-a', instanceId: 'memorylab-dsh' }
+    return { contextId: 'context-a', instanceId: 'memorylab-dsh', accessGrantId: 'grant-a' }
   } }
   t.after(() => rmSync(root, { recursive: true, force: true }))
   t.mock.method(globalThis, 'fetch', async (_url, options) => {
     const body = JSON.parse(options.body)
     assert.equal(body.context_id, 'context-a')
     assert.equal(body.session_id, 'session-a')
+    assert.equal(options.headers['x-dsh-access-grant-id'], 'grant-a')
     assert.equal('user_id' in body, false)
     return new Response(JSON.stringify({ ok: true, data: { items: [] } }), {
       status: 200, headers: { 'content-type': 'application/json' },
@@ -39,7 +40,7 @@ test('Memory Lab query scope comes only from the bound DSH session', async (t) =
 test('Memory Lab client creates a missing attachment root on first startup', (t) => {
   const parent = mkdtempSync(join(tmpdir(), 'memorylab-home-'))
   const root = join(parent, 'attachments', 'v1', 'files')
-  const store = { requireActive() { return { contextId: 'context-a', instanceId: 'memorylab-dsh' } } }
+  const store = { requireActive() { return { contextId: 'context-a', instanceId: 'memorylab-dsh', accessGrantId: 'grant-a' } } }
   t.after(() => rmSync(parent, { recursive: true, force: true }))
 
   assert.equal(client(root, store).attachmentsRoot, root)
@@ -86,7 +87,7 @@ test('Memory Lab upload accepts only a CSV inside the DSH attachment store', asy
   const outside = join(tmpdir(), `outside-${Date.now()}.csv`)
   writeFileSync(csv, 'CHN,BG,BANK,Row,Col\n0,0,0,1,2\n')
   writeFileSync(outside, 'outside')
-  const store = { requireActive() { return { contextId: 'context-a', instanceId: 'memorylab-dsh' } } }
+  const store = { requireActive() { return { contextId: 'context-a', instanceId: 'memorylab-dsh', accessGrantId: 'grant-a' } } }
   t.after(() => {
     rmSync(root, { recursive: true, force: true })
     rmSync(outside, { force: true })
@@ -96,6 +97,7 @@ test('Memory Lab upload accepts only a CSV inside the DSH attachment store', asy
     uploaded = options.body instanceof FormData
     assert.equal(options.body.get('context_id'), 'context-a')
     assert.equal(options.body.get('session_id'), 'session-a')
+    assert.equal(options.headers['x-dsh-access-grant-id'], 'grant-a')
     return new Response(JSON.stringify({ ok: true, data: { job_id: 'job-a' } }), {
       status: 202, headers: { 'content-type': 'application/json' },
     })

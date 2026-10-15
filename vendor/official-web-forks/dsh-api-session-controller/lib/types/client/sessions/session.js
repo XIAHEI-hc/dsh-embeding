@@ -100,6 +100,8 @@ export class Session {
      * dispatch-dependent behavior rather than fail.
      */
     actx;
+    /** Optional host-page context bridge used by embedded page assistants. */
+    pageContextProvider;
     /**
      * @param sessionId - Host session identity (client sessions are always Host-born).
      * @param remote - generated Remote namespaces this session calls.
@@ -136,6 +138,10 @@ export class Session {
     /** Release the bound scope at prune time (a later rebind accompanies a freshly minted scope). */
     unbindScope() {
         this.actx = undefined;
+    }
+    /** Bind the per-request page snapshot provider used by the native prompt seam. */
+    setPageContextProvider(provider) {
+        this.pageContextProvider = provider;
     }
     // ---- Operations ----
     /**
@@ -183,12 +189,21 @@ export class Session {
         let result;
         if (this.address === undefined) {
             const clientTimeZone = resolvedClientTimeZone();
+            const effectiveRequestId = requestId ?? randomUUID();
+            const pageContext = this.pageContextProvider === undefined
+                ? undefined
+                : await this.pageContextProvider({
+                    requestId: effectiveRequestId,
+                    sessionId: this.sessionId,
+                    content,
+                });
             result = await this.remote.session.prompt({
-                requestId: requestId ?? randomUUID(),
+                requestId: effectiveRequestId,
                 sessionId: this.sessionId,
                 mode,
                 content,
                 clientTimeZone,
+                ...(pageContext === undefined ? {} : { pageContext }),
             }, signal);
         }
         else if (content.some(part => part.type === 'file')) {

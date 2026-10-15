@@ -10,6 +10,17 @@ import { MutableSessionEventSource } from '../contract/events.ts';
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol';
 import type { SessionRemotes } from './remotes.ts';
 import { ProjectionValueStore } from './projection-store.ts';
+export interface PageContextOffer {
+    readonly snapshotId: string;
+    readonly snapshotSha256: string;
+    readonly surfaceId: string;
+    readonly protocolVersion: '1.0';
+}
+export type PageContextProvider = (input: {
+    readonly requestId: SessionRequestId;
+    readonly sessionId: SessionId;
+    readonly content: PromptContentPart[];
+}) => Promise<PageContextOffer | undefined>;
 /** Minimum message count for ordinary history windows. */
 export declare const PAGE_MESSAGES = 50;
 /** Minimum messages per page while a turn jump loops backwards. */
@@ -114,6 +125,7 @@ export declare class Session implements SessionFace {
      * @param options - optional manager-owned state observers.
      */
     constructor(sessionId: SessionId, remote: SessionRemotes, options?: SessionOptions);
+    setPageContextProvider(provider: PageContextProvider | undefined): void;
     /**
      * Bind the Agent-scoped context minted by ClientSessions (single write;
      * a second bind is a wiring error and throws). Direction stays one-way at

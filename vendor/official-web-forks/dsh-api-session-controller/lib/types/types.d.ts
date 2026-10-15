@@ -324,6 +324,13 @@ export interface SessionPromptRequest {
     /** At least one non-whitespace text part or attachment. */
     readonly content: readonly PromptContentPart[];
     readonly clientTimeZone?: string;
+    /** Optional page-assistant reference validated by the Host enrichment seam. */
+    readonly pageContext?: {
+        readonly snapshotId: string;
+        readonly snapshotSha256: string;
+        readonly surfaceId: string;
+        readonly protocolVersion: '1.0';
+    };
 }
 /** Receipt after one prompt enters the target Agent inbox. */
 export interface SessionPromptValue {
@@ -563,6 +570,12 @@ declare module '@deepseek-ai/cordis' {
 		}, next: () => Promise<void>): Promise<void>;
         /** Admit a prompt before an Agent is resumed or user content is recorded. */
         'api-session/prompt-admission'(request: SessionPromptRequest, next: () => Promise<void>): Promise<void>;
+        /**
+         * Enrich a cloned prompt request before admission. Listeners may replace
+         * content or add typed metadata on the clone; the original RPC object
+         * remains untouched. The built-in continuation is the next waterfall.
+         */
+        'api-session/prompt-enrichment'(request: SessionPromptRequest & Record<string, unknown>, next: () => Promise<void>): Promise<void>;
         /**
          * A Session became visible or its Agent was created or disposed.
          * Consumers upsert the summary and replace its current running and availability state.

@@ -112,11 +112,26 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
 }
 
 /** Create the server-side receipt immediately before native prompt admission. */
+function brokerLocator(scope, locator) {
+  if (locator?.owner !== scope?.context_id) {
+    const error = new Error('candidate scope denied')
+    error.code = 'SCOPE_DENIED'
+    throw error
+  }
+  return {
+    activation_id: locator.activation_id,
+    version_id: locator.version_id,
+    generation: locator.generation,
+    archive_sha256: locator.archive_sha256,
+  }
+}
+
 export async function admitInvocation({ baseUrl, serviceSecret, instanceId, runtimeId, scope, locator, invocationId, nativeRequestId, fetchImpl = fetch, signal }) {
+  const resolvedLocator = brokerLocator(scope, locator)
   const response = await fetchImpl(runtimeUrl(baseUrl, '/admit'), {
     method: 'POST',
     headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${serviceSecret}`, 'x-dsh-instance-id': instanceId, 'x-dsh-runtime-id': runtimeId },
-    body: JSON.stringify({ protocol_version: '1.0', request_id: randomUUID(), ...scope, ...locator, invocation_id: invocationId, native_request_id: nativeRequestId }),
+    body: JSON.stringify({ protocol_version: '1.0', request_id: randomUUID(), ...scope, ...resolvedLocator, invocation_id: invocationId, native_request_id: nativeRequestId }),
     signal,
   })
   const payload = await response.json().catch(() => undefined)
@@ -126,10 +141,11 @@ export async function admitInvocation({ baseUrl, serviceSecret, instanceId, runt
 
 /** Record one fact about a receipt after the native host has observed it. */
 export async function recordUsage({ baseUrl, serviceSecret, instanceId, runtimeId, scope, locator, invocationId, nativeRequestId, phase, eventId = randomUUID(), occurredAt = new Date().toISOString(), errorCode, fetchImpl = fetch, signal }) {
+  const resolvedLocator = brokerLocator(scope, locator)
   const response = await fetchImpl(runtimeUrl(baseUrl, '/usage'), {
     method: 'POST',
     headers: { accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${serviceSecret}`, 'x-dsh-instance-id': instanceId, 'x-dsh-runtime-id': runtimeId },
-    body: JSON.stringify({ protocol_version: '1.0', request_id: randomUUID(), ...scope, ...locator, event_id: eventId, invocation_id: invocationId, native_request_id: nativeRequestId, phase, occurred_at: occurredAt, ...(errorCode === undefined ? {} : { error_code: errorCode }) }),
+    body: JSON.stringify({ protocol_version: '1.0', request_id: randomUUID(), ...scope, ...resolvedLocator, event_id: eventId, invocation_id: invocationId, native_request_id: nativeRequestId, phase, occurred_at: occurredAt, ...(errorCode === undefined ? {} : { error_code: errorCode }) }),
     signal,
   })
   const payload = await response.json().catch(() => undefined)

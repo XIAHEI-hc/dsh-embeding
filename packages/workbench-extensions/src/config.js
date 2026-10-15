@@ -221,6 +221,12 @@ export function memoryLabIntegrationEnabled(value = process.env.MEMORYLAB_AI_INT
   throw configError('MEMORYLAB_AI_INTEGRATION_ENABLED 必须是 true/false 或 1/0')
 }
 
+function optionalFeatureEnabled(value, label) {
+  if (value === undefined || value === '' || value === 'false' || value === '0') return false
+  if (value === 'true' || value === '1') return true
+  throw configError(`${label} 必须是 true/false 或 1/0`)
+}
+
 export function loadIntegrationConfig(
   probeEnabled = integrationEnabled(),
   memoryLabEnabled = memoryLabIntegrationEnabled(),
@@ -248,6 +254,10 @@ export function loadIntegrationConfig(
     allowedFunctionTypes: memoryLabEnabled
       ? Object.freeze(['MEMORYLAB_CHN'])
       : Object.freeze(['SITE_DESIGN', 'PROBECARD_DESIGN']),
+    pageContextEnabled: optionalFeatureEnabled(
+      process.env.WORKBENCH_PAGE_CONTEXT_ENABLED,
+      'WORKBENCH_PAGE_CONTEXT_ENABLED',
+    ),
     verifyTimeoutMs: integer(
       Number(process.env[`${prefix}_VERIFY_TIMEOUT_MS`] || 5000),
       `${prefix}_VERIFY_TIMEOUT_MS`,

@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import { isBindableInspection } from '../packages/workbench-extensions/src/integration.js'
+import { normalizePageSurface } from '../packages/workbench-extensions/src/page-surface.js'
 import { IntegrationStore, requestHash } from '@dsh-workbench/extensions/integration-store'
 
 function fixture() {
@@ -190,6 +191,46 @@ test('prepare reservations are idempotent and reject changed bodies', () => {
     assert.equal(response.session_id, 'session-a')
     assert.deepEqual(store.reservePrepare(request).response, response)
   } finally { store.close(); f.close() }
+})
+
+test('page surface is normalized and retained as an immutable session binding', () => {
+  const f = fixture()
+  const store = new IntegrationStore(f.path)
+  const pageSurface = normalizePageSurface({
+    surface_id: 'surface-a', conversation_slot: 'slot-a', page_kind: 'failure_map',
+    dataset_id: 'dataset-a', display_mode: 'compact_chat',
+  })
+  try {
+    const request = {
+      clientId: 'memorylab', contextId: 'context-page', workspaceId: 'workspace-a',
+      sessionId: 'session-page', instanceId: 'dsh-memorylab',
+      metadata: { user_id: 'user-a', function_type: 'MEMORYLAB_CHN',
+        runtime_id: 'runner-a', access_grant_id: 'grant-a' }, pageSurface,
+    }
+    store.bind(request)
+    assert.deepEqual(store.requireActive('session-page'), {
+      sessionId: 'session-page', contextId: 'context-page', workspaceId: 'workspace-a',
+      clientId: 'memorylab', instanceId: 'dsh-memorylab', projectId: 'user-a',
+      functionType: 'MEMORYLAB_CHN', runtimeId: 'runner-a', accessGrantId: 'grant-a',
+      pageSurfaceId: 'surface-a', conversationSlot: 'slot-a', pageKind: 'failure_map',
+      datasetId: 'dataset-a', displayMode: 'compact_chat', status: 'active',
+    })
+    assert.throws(() => store.bind({ ...request, pageSurface: { ...pageSurface, dataset_id: 'dataset-b' } }), {
+      code: 'SESSION_CONTEXT_MISMATCH',
+    })
+  } finally { store.close(); f.close() }
+})
+
+test('page surface request hash changes when the server-authorized surface changes', () => {
+  const a = normalizePageSurface({
+    surface_id: 'surface-a', conversation_slot: 'slot-a', page_kind: 'failure_map',
+    dataset_id: 'dataset-a', display_mode: 'compact_chat',
+  })
+  const b = normalizePageSurface({ ...a, dataset_id: 'dataset-b' })
+  assert.notEqual(
+    requestHash({ context_id: 'ctx', workspace_id: 'ws', session_id: null, page_surface: a }),
+    requestHash({ context_id: 'ctx', workspace_id: 'ws', session_id: null, page_surface: b }),
+  )
 })
 
 test('failed prepare reservations can be retried without allocating another session', () => {

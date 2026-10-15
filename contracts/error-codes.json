@@ -114,6 +114,24 @@
     "action": "升级接入协议"
   },
   {
+    "code": "PAGE_CONTEXT_REQUIRED",
+    "http_status": 409,
+    "retryable": false,
+    "action": "刷新页面范围"
+  },
+  {
+    "code": "PAGE_CONTEXT_NOT_FOUND",
+    "http_status": 404,
+    "retryable": true,
+    "action": "刷新页面范围"
+  },
+  {
+    "code": "PAGE_CONTEXT_DIGEST_MISMATCH",
+    "http_status": 409,
+    "retryable": false,
+    "action": "刷新页面范围"
+  },
+  {
     "code": "EMBED_INIT_TIMEOUT",
     "http_status": 504,
     "retryable": true,

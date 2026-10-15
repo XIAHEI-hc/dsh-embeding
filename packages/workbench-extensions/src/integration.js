@@ -6,6 +6,7 @@ import {
   requestHash,
 } from './integration-store.js'
 import { runtimeForSubject } from './runtime-registry.js'
+import { normalizePageSurface } from './page-surface.js'
 
 function oneString(value, label, max = 256) {
   if (typeof value !== 'string' || value.length === 0 || value.length > max) {
@@ -128,7 +129,7 @@ export function isBindableInspection(inspection, parentSessionId) {
 }
 
 async function requireBindableSession(
-  ctx, policy, workspaceId, sessionId, contextId, clientId, store, parentSessionId,
+  ctx, policy, workspaceId, sessionId, contextId, clientId, store, parentSessionId, pageSurface,
 ) {
   policy.requireSession(workspaceId, sessionId)
   const bound = store.binding(sessionId)
@@ -137,6 +138,13 @@ async function requireBindableSession(
       throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH')
     }
     if (bound.status !== 'active') throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+    if (pageSurface !== undefined && (bound.pageSurfaceId !== pageSurface.surface_id
+      || bound.conversationSlot !== pageSurface.conversation_slot
+      || bound.pageKind !== pageSurface.page_kind
+      || bound.datasetId !== pageSurface.dataset_id
+      || bound.displayMode !== pageSurface.display_mode)) {
+      throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH', { message: 'session 的 page_surface 不可变' })
+    }
     return
   }
   let inspection
@@ -170,17 +178,23 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
     try {
       client = findClient(req)
       const body = await readJson(req)
-      exactKeys(body, ['context_id', 'workspace_alias', 'session_id', 'access_grant_id', 'request_id'])
+      exactKeys(body, ['context_id', 'workspace_alias', 'session_id', 'access_grant_id', 'request_id', 'page_surface'])
       const contextId = oneString(body.context_id, 'context_id')
       const alias = oneString(body.workspace_alias, 'workspace_alias', 128)
       integrationRequestId = oneString(body.request_id, 'request_id', 128)
       const accessGrantId = oneString(body.access_grant_id, 'access_grant_id', 36)
+      const pageSurface = normalizePageSurface(body.page_surface)
       if (!client.workspaceAliases.includes(alias)) throw new WorkbenchExtensionError('EMBED_SCOPE_DENIED')
       const workspace = await policy.requireWritable(await policy.checkAlias(alias, { register: true }))
       const requestedSessionId = body.session_id === undefined
         ? undefined
         : oneString(body.session_id, 'session_id')
-      const hash = requestHash({ context_id: contextId, workspace_id: workspace.workspace_id, session_id: requestedSessionId ?? null })
+      const hash = requestHash({
+        context_id: contextId,
+        workspace_id: workspace.workspace_id,
+        session_id: requestedSessionId ?? null,
+        page_surface: pageSurface ?? null,
+      })
       const reserved = store.reservePrepare({
         clientId: client.clientId,
         requestId: integrationRequestId,
@@ -188,6 +202,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
         contextId,
         workspaceId: workspace.workspace_id,
         sessionId: requestedSessionId ?? newIntegrationSessionId(),
+        pageSurface,
       })
       if (reserved.state === 'complete') {
         writeJson(res, 200, { ...reserved.response, request_id: id })
@@ -199,7 +214,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
         await ctx.sessionController.create({ workspaceId: workspace.workspace_id, sessionId })
       }
       await requireBindableSession(
-        ctx, policy, workspace.workspace_id, sessionId, contextId, client.clientId, store,
+        ctx, policy, workspace.workspace_id, sessionId, contextId, client.clientId, store, undefined, pageSurface,
       )
       const result = store.completePrepare({
         clientId: client.clientId,
@@ -209,6 +224,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
         sessionId,
         instanceId: config.instanceId,
         metadata,
+        pageSurface,
       })
       writeJson(res, reserved.created ? 201 : 200, { ...result, request_id: id })
     } catch (error) {
@@ -308,6 +324,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
 
   return {
     store,
+    config,
     dispose() {
       for (const dispose of disposers.reverse()) dispose()
       store.close()

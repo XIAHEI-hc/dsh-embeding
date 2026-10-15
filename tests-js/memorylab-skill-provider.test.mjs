@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createRemoteProvider, synchronizeRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
+import { admitInvocation, createRemoteProvider, recordUsage, synchronizeRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
 
 const scope = { context_id: 'ctx-a', session_id: 'session-a', access_grant_id: 'grant-a' }
 
@@ -40,6 +40,22 @@ test('provider rejects a resolve response whose canonical identity changed', asy
     name: 'ml-chn-v1-0-0-habc', provider: 'memorylab-remote',
     locator: { owner: 'ctx-a', activation_id: 'a', version_id: 'v', generation: 2, archive_sha256: 'a'.repeat(64) },
   }), { code: 'SKILL_VERSION_CHANGED' })
+})
+
+test('broker admission and usage strip local owner metadata from wire payloads', async () => {
+  const calls = []
+  const fetchImpl = async (url, options) => {
+    calls.push(JSON.parse(options.body))
+    return { ok: true, json: async () => ({ accepted: true }) }
+  }
+  const locator = { owner: 'ctx-a', activation_id: 'a', version_id: 'v', generation: 2, archive_sha256: 'a'.repeat(64) }
+  await admitInvocation({ baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope, locator, invocationId: 'inv-1', nativeRequestId: 'req-1', fetchImpl })
+  await recordUsage({ baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope, locator, invocationId: 'inv-1', nativeRequestId: 'req-1', phase: 'loaded', fetchImpl })
+  assert.equal(calls.length, 2)
+  assert.equal('owner' in calls[0], false)
+  assert.equal('owner' in calls[1], false)
+  assert.equal(calls[0].activation_id, 'a')
+  assert.equal(calls[1].phase, 'loaded')
 })
 
 test('synchronizer acknowledges only a self-checked fixed version', async () => {

@@ -91,6 +91,25 @@
         }
       }
     },
+    "/embed/control/integration/prepare": {
+      "post": {
+        "summary": "Prepare an authorized page or full-workbench session",
+        "security": [{ "ClientBearer": [] }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IntegrationPrepareRequest" } } }
+        },
+        "responses": {
+          "200": { "description": "Existing idempotent preparation", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IntegrationPrepareResponse" } } } },
+          "201": { "description": "Prepared session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IntegrationPrepareResponse" } } } },
+          "400": { "$ref": "#/components/responses/Error" },
+          "401": { "$ref": "#/components/responses/Error" },
+          "403": { "$ref": "#/components/responses/Error" },
+          "409": { "$ref": "#/components/responses/Error" },
+          "503": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
     "/embed": {
       "get": {
         "summary": "Serve the CSP-restricted iframe bootstrap page",
@@ -222,6 +241,51 @@
         "type": "object",
         "properties": { "revoked": { "type": "boolean" }, "request_id": { "$ref": "#/components/schemas/RequestId" } },
         "required": ["revoked", "request_id"],
+        "additionalProperties": false
+      },
+      "PageSurface": {
+        "type": "object",
+        "properties": {
+          "surface_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "conversation_slot": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "page_kind": { "enum": ["failure_map", "chn_vis"] },
+          "dataset_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "display_mode": { "const": "compact_chat" }
+        },
+        "required": ["surface_id", "conversation_slot", "page_kind", "dataset_id", "display_mode"],
+        "additionalProperties": false
+      },
+      "IntegrationPrepareRequest": {
+        "type": "object",
+        "properties": {
+          "context_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "workspace_alias": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "session_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "access_grant_id": { "type": "string", "minLength": 1, "maxLength": 36 },
+          "request_id": { "$ref": "#/components/schemas/RequestId" },
+          "page_surface": { "$ref": "#/components/schemas/PageSurface" }
+        },
+        "required": ["context_id", "workspace_alias", "access_grant_id", "request_id"],
+        "additionalProperties": false
+      },
+      "IntegrationPrepareResponse": {
+        "type": "object",
+        "properties": {
+          "context_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "workspace_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "session_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "binding_status": { "const": "active" },
+          "dsh_instance_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "runtime_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "surface_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "conversation_slot": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "surface_kind": { "const": "page_assistant" },
+          "page_kind": { "enum": ["failure_map", "chn_vis"] },
+          "dataset_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "display_mode": { "const": "compact_chat" },
+          "request_id": { "$ref": "#/components/schemas/RequestId" }
+        },
+        "required": ["context_id", "workspace_id", "session_id", "binding_status", "dsh_instance_id", "request_id"],
         "additionalProperties": false
       },
       "Health": {

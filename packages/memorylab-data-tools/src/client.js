@@ -62,12 +62,13 @@ export class MemoryLabToolClient {
     return { binding, sessionId }
   }
 
-  headers() {
+  headers(binding) {
     return {
       accept: 'application/json',
       authorization: `Bearer ${this.secret}`,
       'x-dsh-instance-id': this.instanceId,
       ...(this.runtimeId === undefined ? {} : { 'x-dsh-runtime-id': this.runtimeId }),
+      'x-dsh-access-grant-id': required(binding?.accessGrantId, 'accessGrantId'),
     }
   }
 
@@ -86,7 +87,7 @@ export class MemoryLabToolClient {
     try {
       const response = await fetch(`${this.origin}/api/ai/tool-query`, {
         method: 'POST',
-        headers: { ...this.headers(), 'content-type': 'application/json' },
+        headers: { ...this.headers(binding), 'content-type': 'application/json' },
         body: JSON.stringify({
           request_id: randomUUID(), context_id: binding.contextId,
           session_id: sessionId, tool, arguments: args,
@@ -133,7 +134,7 @@ export class MemoryLabToolClient {
     const timer = this.signal(exec)
     try {
       const response = await fetch(`${this.origin}/api/ai/tool-upload`, {
-        method: 'POST', headers: this.headers(), body: form, signal: timer.signal,
+        method: 'POST', headers: this.headers(binding), body: form, signal: timer.signal,
       })
       return await this.result(response)
     } finally {

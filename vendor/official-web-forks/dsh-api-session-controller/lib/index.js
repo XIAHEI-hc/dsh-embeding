@@ -866,17 +866,27 @@ var SessionCommandController = class {
 	*/
 	async prompt(request) {
 		if (!hasPromptContent(request.content)) throw new RemoteError("gateway/bad-request", "prompt content must include non-whitespace text or an attachment", {});
-		const clientTimeZone = request.clientTimeZone === void 0 ? void 0 : canonicalClientTimeZone(request.clientTimeZone);
-		if (request.clientTimeZone !== void 0 && clientTimeZone === void 0) throw new RemoteError("session/invalid-time-zone", "clientTimeZone must be UTC or a valid IANA Area/Location name", { value: request.clientTimeZone });
-		await this.ctx.waterfall("api-session/prompt-admission", request, () => Promise.resolve());
-		const agent = await this.resolveAgent(request.sessionId);
-		if (hasPromptRequest(agent, request.requestId)) return { accepted: true };
+		// This is the controlled enrichment seam for page-context integrations.
+		// Clone the request before dispatch so listeners can replace content and
+		// metadata without mutating the remote-command argument object. The
+		// ordinary prompt-admission hook remains a separate veto-only stage.
+		const admittedRequest = {
+			...request,
+			content: request.content.map((part) => part !== null && typeof part === "object" ? { ...part } : part)
+		};
+		await this.ctx.waterfall("api-session/prompt-enrichment", admittedRequest, () => Promise.resolve());
+		if (!hasPromptContent(admittedRequest.content)) throw new RemoteError("gateway/bad-request", "enriched prompt content must include non-whitespace text or an attachment", {});
+		const clientTimeZone = admittedRequest.clientTimeZone === void 0 ? void 0 : canonicalClientTimeZone(admittedRequest.clientTimeZone);
+		if (admittedRequest.clientTimeZone !== void 0 && clientTimeZone === void 0) throw new RemoteError("session/invalid-time-zone", "clientTimeZone must be UTC or a valid IANA Area/Location name", { value: admittedRequest.clientTimeZone });
+		await this.ctx.waterfall("api-session/prompt-admission", admittedRequest, () => Promise.resolve());
+		const agent = await this.resolveAgent(admittedRequest.sessionId);
+		if (hasPromptRequest(agent, admittedRequest.requestId)) return { accepted: true };
 		const source = {
 			kind: "user",
-			rpcId: request.requestId,
+			rpcId: admittedRequest.requestId,
 			...clientTimeZone === void 0 ? {} : { clientTimeZone }
 		};
-		const hasImage = request.content.some((part) => part.type === "image");
+		const hasImage = admittedRequest.content.some((part) => part.type === "image");
 		const admit = async () => {
 			try {
 				const env_2 = {
@@ -890,14 +900,14 @@ var SessionCommandController = class {
 						const model = await this.ctx.llm.resolveModelInfo(current.provider, current.model);
 						if (model.inputModalities !== void 0 && !model.inputModalities.includes("image")) throw new RemoteError("session/attachment-invalid", `Model "${current.model}" does not support image input.`, { reason: "MODEL_DOES_NOT_SUPPORT_IMAGES" });
 					}
-					const admission = resolvePromptFileReceipts(request.content, (receiptId) => this.ctx.fileUploads.resolve(agent, receiptId));
+					const admission = resolvePromptFileReceipts(admittedRequest.content, (receiptId) => this.ctx.fileUploads.resolve(agent, receiptId));
 					const message = createUserMessage({
 						content: await this.ctx.attachments.admitPromptContent(admission.content),
 						source
 					});
 					if (this.ctx.agents.get(agent.id) !== agent) throw new RemoteError("session/not-found", `session "${agent.id}" was disposed during prompt admission`, { sessionId: agent.id });
-					const binding = __addDisposableResource$3(env_2, this.ctx.fileUploads.bindPrompt(agent, admission.receiptIds, request.requestId), false);
-					if (request.mode === "steer") agent.steer(message);
+					const binding = __addDisposableResource$3(env_2, this.ctx.fileUploads.bindPrompt(agent, admission.receiptIds, admittedRequest.requestId), false);
+					if (admittedRequest.mode === "steer") agent.steer(message);
 					else agent.followup(message);
 					binding.commit();
 				} catch (e_2) {

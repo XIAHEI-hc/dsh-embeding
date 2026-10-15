@@ -45,12 +45,16 @@ Client 插件必须等待官方 workspace controller snapshot。直接在首次�
 
 位置：`vendor/official-web-forks/dsh-api-session-controller`。
 
-基于上游 `packages/api/session-controller`，只增加三个与集成授权相关的 Cordis waterfall：
+基于上游 `packages/api/session-controller`，增加与集成授权和页面上下文相关的 Cordis waterfall：
 
 - `api-session/create-admission`：位于 session ID/Agent/durable state 创建之前；
 - `api-session/fork-admission`：位于 fork child ID 生成之后、`agents.create()` 持久化之前；
 - `api-session/fork-failed`：native fork 持久化失败时回滚尚未物化的 child binding；
 - `api-session/prompt-admission`：位于 Agent 恢复和用户内容落盘之前。
+- `api-session/prompt-enrichment`：在 `prompt-admission` 之前运行；controller 先复制
+  prompt request，再允许受控 listener 异步替换 content/typed metadata，原始 RPC 参数不被修改。
+  这是页面 snapshot 进入真实 native prompt 的扩展点，不是准入检查，也不通过 `initial_prompt`
+  或 DOM 点击实现。
 
 多用户 runner 的 gateway 会剥离浏览器 `dsh_scope` cookie，并为每次转发注入由该
 runner 私有 credential 生成的 HMAC scope proof。`dsh-client-connection` fork 只在

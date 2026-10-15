@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { WorkbenchExtensionError } from './errors.js'
+import { pageSurfaceColumns, pageSurfaceResponse } from './page-surface.js'
 
 export function integrationStatePath(value = (
   process.env.MEMORYLAB_AI_INTEGRATION_STATE ?? process.env.PROBE_AI_INTEGRATION_STATE
@@ -48,6 +49,11 @@ export class IntegrationStore {
         runtime_id TEXT,
         access_grant_id TEXT,
         function_type TEXT NOT NULL,
+        page_surface_id TEXT,
+        page_conversation_slot TEXT,
+        page_kind TEXT,
+        page_dataset_id TEXT,
+        page_display_mode TEXT,
         status TEXT NOT NULL CHECK(status IN ('active', 'revoked')),
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
@@ -61,6 +67,11 @@ export class IntegrationStore {
         context_id TEXT NOT NULL,
         workspace_id TEXT NOT NULL,
         session_id TEXT NOT NULL,
+        page_surface_id TEXT,
+        page_conversation_slot TEXT,
+        page_kind TEXT,
+        page_dataset_id TEXT,
+        page_display_mode TEXT,
         state TEXT NOT NULL CHECK(state IN ('reserved', 'complete', 'failed')),
         response_json TEXT,
         error_code TEXT,
@@ -80,13 +91,24 @@ export class IntegrationStore {
         ON skill_usage_outbox(next_attempt_at, created_at);
     `)
     const columns = this.db.prepare('PRAGMA table_info(integration_bindings)').all()
+    const prepareColumns = this.db.prepare('PRAGMA table_info(integration_prepare_requests)').all()
     if (!columns.some(column => column.name === 'runtime_id')) this.db.exec('ALTER TABLE integration_bindings ADD COLUMN runtime_id TEXT')
     if (!columns.some(column => column.name === 'access_grant_id')) this.db.exec('ALTER TABLE integration_bindings ADD COLUMN access_grant_id TEXT')
+    if (!columns.some(column => column.name === 'page_surface_id')) this.db.exec('ALTER TABLE integration_bindings ADD COLUMN page_surface_id TEXT')
+    if (!columns.some(column => column.name === 'page_conversation_slot')) this.db.exec('ALTER TABLE integration_bindings ADD COLUMN page_conversation_slot TEXT')
+    if (!columns.some(column => column.name === 'page_kind')) this.db.exec('ALTER TABLE integration_bindings ADD COLUMN page_kind TEXT')
+    if (!columns.some(column => column.name === 'page_dataset_id')) this.db.exec('ALTER TABLE integration_bindings ADD COLUMN page_dataset_id TEXT')
+    if (!columns.some(column => column.name === 'page_display_mode')) this.db.exec('ALTER TABLE integration_bindings ADD COLUMN page_display_mode TEXT')
+    if (!prepareColumns.some(column => column.name === 'page_surface_id')) this.db.exec('ALTER TABLE integration_prepare_requests ADD COLUMN page_surface_id TEXT')
+    if (!prepareColumns.some(column => column.name === 'page_conversation_slot')) this.db.exec('ALTER TABLE integration_prepare_requests ADD COLUMN page_conversation_slot TEXT')
+    if (!prepareColumns.some(column => column.name === 'page_kind')) this.db.exec('ALTER TABLE integration_prepare_requests ADD COLUMN page_kind TEXT')
+    if (!prepareColumns.some(column => column.name === 'page_dataset_id')) this.db.exec('ALTER TABLE integration_prepare_requests ADD COLUMN page_dataset_id TEXT')
+    if (!prepareColumns.some(column => column.name === 'page_display_mode')) this.db.exec('ALTER TABLE integration_prepare_requests ADD COLUMN page_display_mode TEXT')
     this.db.prepare(`INSERT OR IGNORE INTO integration_schema_migrations(version, applied_at)
       VALUES(1, ?)`).run(this.now())
   }
 
-  reservePrepare({ clientId, requestId, hash, contextId, workspaceId, sessionId }) {
+  reservePrepare({ clientId, requestId, hash, contextId, workspaceId, sessionId, pageSurface }) {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const existing = this.db.prepare(`SELECT * FROM integration_prepare_requests
@@ -103,11 +125,15 @@ export class IntegrationStore {
         }
       }
       const now = this.now()
+      const surface = pageSurfaceColumns(pageSurface)
       this.db.prepare(`INSERT INTO integration_prepare_requests(
         client_id, request_id, request_hash, context_id, workspace_id, session_id,
+        page_surface_id, page_conversation_slot, page_kind, page_dataset_id, page_display_mode,
         state, created_at, updated_at
-      ) VALUES(?, ?, ?, ?, ?, ?, 'reserved', ?, ?)`).run(
-        clientId, requestId, hash, contextId, workspaceId, sessionId, now, now,
+      ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?)`).run(
+        clientId, requestId, hash, contextId, workspaceId, sessionId,
+        surface.pageSurfaceId ?? null, surface.conversationSlot ?? null, surface.pageKind ?? null,
+        surface.datasetId ?? null, surface.displayMode ?? null, now, now,
       )
       this.db.exec('COMMIT')
       return { created: true, state: 'reserved', sessionId }
@@ -117,7 +143,7 @@ export class IntegrationStore {
     }
   }
 
-  completePrepare({ clientId, requestId, contextId, workspaceId, sessionId, instanceId, metadata }) {
+  completePrepare({ clientId, requestId, contextId, workspaceId, sessionId, instanceId, metadata, pageSurface }) {
     const now = this.now()
     const response = {
       session_id: sessionId,
@@ -126,6 +152,7 @@ export class IntegrationStore {
       binding_status: 'active',
       dsh_instance_id: instanceId,
       ...(metadata.runtime_id === undefined ? {} : { runtime_id: metadata.runtime_id }),
+      ...pageSurfaceResponse(pageSurface),
     }
     this.db.exec('BEGIN IMMEDIATE')
     try {
@@ -139,6 +166,7 @@ export class IntegrationStore {
         functionType: metadata.function_type,
         runtimeId: metadata.runtime_id,
         accessGrantId: metadata.access_grant_id,
+        pageSurface,
       })
       const updated = this.db.prepare(`UPDATE integration_prepare_requests
         SET state = 'complete', response_json = ?, error_code = NULL, updated_at = ?
@@ -161,7 +189,7 @@ export class IntegrationStore {
     ).run(code, this.now(), clientId, requestId)
   }
 
-  bind({ clientId, contextId, workspaceId, sessionId, instanceId, metadata }) {
+  bind({ clientId, contextId, workspaceId, sessionId, instanceId, metadata, pageSurface }) {
     this.db.exec('BEGIN IMMEDIATE')
     try {
       const value = this.bindImmutable({
@@ -174,6 +202,7 @@ export class IntegrationStore {
         functionType: metadata.function_type,
         runtimeId: metadata.runtime_id,
         accessGrantId: metadata.access_grant_id,
+        pageSurface,
       })
       this.db.exec('COMMIT')
       return value
@@ -183,8 +212,9 @@ export class IntegrationStore {
     }
   }
 
-  bindImmutable({ sessionId, contextId, workspaceId, clientId, instanceId, projectId, functionType, runtimeId, accessGrantId }) {
+  bindImmutable({ sessionId, contextId, workspaceId, clientId, instanceId, projectId, functionType, runtimeId, accessGrantId, pageSurface }) {
     const existing = this.db.prepare('SELECT * FROM integration_bindings WHERE session_id = ?').get(sessionId)
+    const surface = pageSurfaceColumns(pageSurface)
     if (existing !== undefined) {
       if (existing.context_id !== contextId || existing.workspace_id !== workspaceId
         || existing.client_id !== clientId || existing.dsh_instance_id !== instanceId
@@ -192,6 +222,13 @@ export class IntegrationStore {
         throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH')
       }
       if (existing.status === 'revoked' || (runtimeId !== undefined && existing.runtime_id !== runtimeId)) throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+      if ((existing.page_surface_id ?? undefined) !== surface.pageSurfaceId
+        || (existing.page_conversation_slot ?? undefined) !== surface.conversationSlot
+        || (existing.page_kind ?? undefined) !== surface.pageKind
+        || (existing.page_dataset_id ?? undefined) !== surface.datasetId
+        || (existing.page_display_mode ?? undefined) !== surface.displayMode) {
+        throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH', { message: 'session 的 page_surface 不可变' })
+      }
       if (accessGrantId !== undefined && accessGrantId !== existing.access_grant_id) {
         this.db.prepare('UPDATE integration_bindings SET access_grant_id = ?, updated_at = ? WHERE session_id = ?')
           .run(accessGrantId, this.now(), sessionId)
@@ -201,10 +238,14 @@ export class IntegrationStore {
     const now = this.now()
     this.db.prepare(`INSERT INTO integration_bindings(
       session_id, context_id, workspace_id, client_id, dsh_instance_id,
-      project_id, function_type, runtime_id, access_grant_id, status, created_at, updated_at
-    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`).run(
+      project_id, function_type, runtime_id, access_grant_id,
+      page_surface_id, page_conversation_slot, page_kind, page_dataset_id, page_display_mode,
+      status, created_at, updated_at
+    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`).run(
       sessionId, contextId, workspaceId, clientId, instanceId,
-      projectId, functionType, runtimeId ?? null, accessGrantId ?? null, now, now,
+      projectId, functionType, runtimeId ?? null, accessGrantId ?? null,
+      surface.pageSurfaceId ?? null, surface.conversationSlot ?? null, surface.pageKind ?? null,
+      surface.datasetId ?? null, surface.displayMode ?? null, now, now,
     )
     return this.binding(sessionId)
   }
@@ -222,6 +263,13 @@ export class IntegrationStore {
       functionType: row.function_type,
       ...(row.runtime_id === null || row.runtime_id === undefined ? {} : { runtimeId: row.runtime_id }),
       ...(row.access_grant_id === null || row.access_grant_id === undefined ? {} : { accessGrantId: row.access_grant_id }),
+      ...(row.page_surface_id === null || row.page_surface_id === undefined ? {} : {
+        pageSurfaceId: row.page_surface_id,
+        conversationSlot: row.page_conversation_slot,
+        pageKind: row.page_kind,
+        datasetId: row.page_dataset_id,
+        displayMode: row.page_display_mode,
+      }),
       status: row.status,
     }
   }
