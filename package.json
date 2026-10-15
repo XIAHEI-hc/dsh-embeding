@@ -25,6 +25,7 @@
     "test:extensions": "node --test tests-js/*.test.mjs",
     "test:embed": "node scripts/embed-smoke.cjs",
     "test:probe-integration": "node scripts/probe-integration-smoke.cjs",
+    "test:acceptance": "python scripts/acceptance_matrix.py",
     "runtime-gateway": "node scripts/runtime-gateway.mjs"
   }
 }
