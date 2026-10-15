@@ -229,9 +229,13 @@ export class IntegrationStore {
         || (existing.page_display_mode ?? undefined) !== surface.displayMode) {
         throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH', { message: 'session 的 page_surface 不可变' })
       }
+      // A live native session is bound to the exact browser login grant that
+      // created it. Replacing the grant in place would let two simultaneously
+      // valid browser scopes share one runner binding and make the older scope
+      // execute under the newer login. Revoke and create a fresh binding
+      // before changing grants.
       if (accessGrantId !== undefined && accessGrantId !== existing.access_grant_id) {
-        this.db.prepare('UPDATE integration_bindings SET access_grant_id = ?, updated_at = ? WHERE session_id = ?')
-          .run(accessGrantId, this.now(), sessionId)
+        throw new WorkbenchExtensionError('CONTEXT_REVOKED')
       }
       return this.binding(sessionId)
     }
