@@ -7,7 +7,14 @@ window.__ModuleLoader__.load({
 		const KEY = "dsh.embed.pending.v1";
 		const PROTOCOL = "dsh.embed";
 		const VERSION = "1.0";
+		const PAGE_PROTOCOL = "dsh.page";
+		const PAGE_VERSION = "1.0";
 		const knownError = (error) => error instanceof Error ? error.message : String(error);
+		const validPageSurface = (value) => value === undefined || (value && typeof value === "object"
+			&& typeof value.surface_id === "string" && typeof value.conversation_slot === "string"
+			&& (value.page_kind === "failure_map" || value.page_kind === "chn_vis")
+			&& typeof value.dataset_id === "string" && value.display_mode === "compact_chat"
+			&& Object.keys(value).length === 5);
 		function loadState() {
 			const raw = sessionStorage.getItem(KEY);
 			if (raw === null) return;
@@ -16,7 +23,8 @@ window.__ModuleLoader__.load({
 				if (value?.protocol !== PROTOCOL || value?.version !== VERSION
 					|| typeof value.workspace_id !== "string" || typeof value.parent_origin !== "string"
 					|| typeof value.channel_id !== "string" || typeof value.request_id !== "string"
-					|| !["grant", "workspace", "session"].includes(value.session_binding)) return;
+					|| !["grant", "workspace", "session"].includes(value.session_binding)
+					|| !validPageSurface(value.page_surface)) return;
 				return value;
 			} catch { return; }
 		}
@@ -28,8 +36,73 @@ window.__ModuleLoader__.load({
 			return typeof state.context_id === "string" ? { context_id: state.context_id } : {};
 		}
 		function save(state) { sessionStorage.setItem(KEY, JSON.stringify(state)); }
+		function installPageBridge(ctx, state) {
+			if (state.page_bridge_installed) return;
+			state.page_bridge_installed = true;
+			state.page_surface = state.page_surface;
+			state.page_waiters = new Map();
+			const listener = (event) => {
+				const message = event.data;
+				if (message?.protocol !== PAGE_PROTOCOL || message.version !== PAGE_VERSION
+					|| message.channel_id !== state.channel_id || event.source !== window.parent) return;
+				if (message.type === "surface") {
+					const proposed = message.payload?.surface;
+					if (state.page_surface === undefined || JSON.stringify(proposed) !== JSON.stringify(state.page_surface)) return;
+					return;
+				}
+				if (message.type !== "context.offer" && message.type !== "context.error") return;
+				const waiter = state.page_waiters.get(message.request_id);
+				if (waiter === undefined) return;
+				state.page_waiters.delete(message.request_id);
+				clearTimeout(waiter.timer);
+				if (message.type === "context.error") {
+					if (message.surface_id !== state.page_surface?.surface_id || message.session_id !== waiter.sessionId
+						|| message.payload?.session_id !== waiter.sessionId || message.payload?.native_prompt_id !== waiter.requestId) {
+						waiter.reject(new Error("PAGE_CONTEXT_MISMATCH"));
+					} else waiter.reject(new Error(message.payload?.code || "PAGE_CONTEXT_ERROR"));
+				}
+				else {
+					const offer = message.payload;
+					if (message.surface_id !== state.page_surface?.surface_id || message.session_id !== waiter.sessionId
+						|| offer?.native_prompt_id !== waiter.requestId || offer?.surface_id !== undefined
+						|| typeof offer.session_id !== "string" || offer.session_id !== waiter.sessionId
+						|| typeof offer.snapshot_id !== "string" || typeof offer.sha256 !== "string") {
+						waiter.reject(new Error("PAGE_CONTEXT_MISMATCH"));
+					} else waiter.resolve({ snapshotId: offer.snapshot_id, snapshotSha256: offer.sha256,
+						surfaceId: message.surface_id, protocolVersion: PAGE_VERSION });
+				}
+			};
+			window.addEventListener("message", listener);
+			state.page_bridge_dispose = () => window.removeEventListener("message", listener);
+			const bind = () => {
+				const sessionId = state.session_id;
+				if (typeof sessionId !== "string") return;
+				let session;
+				try { session = ctx.sessions.binding(sessionId)?.session; } catch { return; }
+				if (session === undefined || typeof session.setPageContextProvider !== "function") return;
+				session.setPageContextProvider(async ({ requestId, sessionId: boundSessionId }) => {
+					const surface = state.page_surface;
+					if (surface === undefined) return undefined;
+					if (surface.conversation_slot !== undefined && typeof surface.conversation_slot !== "string") throw new Error("PAGE_SURFACE_INVALID");
+					return await new Promise((resolve, reject) => {
+						const timer = setTimeout(() => { state.page_waiters.delete(requestId); reject(new Error("PAGE_CONTEXT_TIMEOUT")); }, 20000);
+						state.page_waiters.set(requestId, { requestId, sessionId: boundSessionId, resolve, reject, timer });
+						sendPage(state, "context.request", requestId, { native_prompt_id: requestId, session_id: boundSessionId });
+					});
+				});
+			};
+			state.page_bind = bind;
+			bind();
+		}
+		function sendPage(state, type, requestId, payload) {
+			if (typeof state.parent_origin !== "string") return;
+			parent.postMessage({ protocol: PAGE_PROTOCOL, version: PAGE_VERSION, type,
+				channel_id: state.channel_id, surface_id: state.page_surface?.surface_id || "unknown",
+				session_id: state.session_id || "unknown", request_id: requestId, payload }, state.parent_origin);
+		}
 		function forceFreshNativeSessions(ctx) {
-			const original = ctx.uiWorkspace.connectWorkspace;
+			const original = ctx.uiWorkspace?.connectWorkspace;
+			if (typeof original !== "function") return () => {};
 			const create = (workspaceId) => ctx.sessions.create({ workspaceId });
 			ctx.uiWorkspace.connectWorkspace = create;
 			return () => {
@@ -109,6 +182,8 @@ window.__ModuleLoader__.load({
 			save(state);
 			send(state, "initialized", { workspace_id: state.workspace_id, session_id: state.session_id,
 				mode: state.mode, capabilities: state.capabilities });
+			installPageBridge(ctx, state);
+			state.page_bind?.();
 			if (typeof sessionId === "string") send(state, "session.opened", {
 				workspace_id: state.workspace_id, session_id: sessionId,
 			});
@@ -190,6 +265,7 @@ window.__ModuleLoader__.load({
 		function apply(ctx) {
 			const state = loadState();
 			if (state === undefined) return;
+			installPageBridge(ctx, state);
 			const disposeFreshSessions = forceFreshNativeSessions(ctx);
 			ctx.effect(() => disposeFreshSessions, "workbench embed fresh native sessions");
 			const connection = () => {
