@@ -54,7 +54,12 @@ async def main_async():
         except asyncio.TimeoutError:
             closed = False
     after = session.get(GW + "/", allow_redirects=False)
+    if closed is not True:
+        raise AssertionError("scoped WebSocket remained open after logout")
+    if after.status_code != 403:
+        raise AssertionError(f"revoked scope remained usable: HTTP_{after.status_code}")
     print(json.dumps({
+        "result": "PASS",
         "logout_status": logout.status_code,
         "context_id": bootstrap_body["context_id"],
         "session_id": bootstrap_body["session_id"],

@@ -26,19 +26,32 @@ def login(username, password):
     r.raise_for_status()
     return s, r.json()["user"]
 
+
+def require(condition, message):
+    if not condition:
+        raise AssertionError(message)
+
 def main():
     a, au = login(os.environ.get("ACCEPTANCE_USER_A_USERNAME", "admin"), os.environ["ACCEPTANCE_USER_A_PASSWORD"])
     b, bu = login(os.environ.get("ACCEPTANCE_USER_B_USERNAME", "acceptance_b"), os.environ["ACCEPTANCE_USER_B_PASSWORD"])
     ast, ab = call(a, "POST", "/api/ai/bootstrap", {"request_id": "acceptance-a-" + str(uuid.uuid4())})
     bst, bb = call(b, "POST", "/api/ai/bootstrap", {"request_id": "acceptance-b-" + str(uuid.uuid4())})
+    require(ast == 200 and bst == 200, f"bootstrap failed: A={ast}, B={bst}")
+    require(ab.get("runtime_id") and bb.get("runtime_id"), "bootstrap did not return runtime identity")
+    require(ab["runtime_id"] != bb["runtime_id"], "A/B bootstrap selected the same runtime")
+    require(ab.get("scope_ticket") and bb.get("scope_ticket"), "scoped bootstrap did not return scope tickets")
+    require(ab.get("context_id") != bb.get("context_id"), "A/B contexts must differ")
+    require(ab.get("session_id") != bb.get("session_id"), "A/B sessions must differ")
     aact_st, aact = call(a, "GET", "/api/skills/me/activations")
     bact_st, bact = call(b, "GET", "/api/skills/me/activations")
     cross_st, cross = call(b, "POST", "/api/ai/session-associations", {
         "context_id": ab.get("context_id"), "session_id": ab.get("session_id"),
         "request_id": "cross-" + str(uuid.uuid4()), "expected_version": 1,
     })
+    require(cross_st in (403, 404), f"cross-user association was not rejected: {cross_st}")
     ar_st, ar_loc, _ = redeem_scope(a, ab.get("scope_ticket"))
     br_st, br_loc, _ = redeem_scope(b, bb.get("scope_ticket"))
+    require(ar_st == 303 and br_st == 303, f"scope redeem failed: A={ar_st}, B={br_st}")
     a_ready = a.get("http://127.0.0.1:8875/embed/health/ready")
     b_ready = b.get("http://127.0.0.1:8875/embed/health/ready")
     cross_ready = requests.get("http://127.0.0.1:8875/embed/health/ready")
@@ -51,7 +64,14 @@ def main():
     b_root = b.get("http://127.0.0.1:8875/", allow_redirects=False)
     b_a_root = b_with_a.get("http://127.0.0.1:8875/", allow_redirects=False)
     unauth_root = requests.get("http://127.0.0.1:8875/", allow_redirects=False)
+    require(a_ready.status_code == 200 and b_ready.status_code == 200, "valid scopes cannot reach their runtimes")
+    require(cross_ready.status_code in (401, 403), "unauthenticated gateway request was accepted")
+    require(b_a_ready.status_code == 403, "B accepted A's scope cookie")
+    require(a_root.status_code == 200 and b_root.status_code == 200, "valid scoped root failed")
+    require(b_a_root.status_code == 403, "B's copied scope reached A's root")
+    require(unauth_root.status_code in (401, 403), "unauthenticated root was accepted")
     print(json.dumps({
+        "result": "PASS",
         "a_user": au["id"], "b_user": bu["id"],
         "a_bootstrap_status": ast, "b_bootstrap_status": bst,
         "a_runtime": ab.get("runtime_id"), "b_runtime": bb.get("runtime_id"),
