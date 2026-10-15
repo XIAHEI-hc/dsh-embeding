@@ -27,6 +27,7 @@
 | static asset declaration boundary | 上传校验现在要求 `assets/` 下每一个文件都必须在 manifest 的 `assets` 数组中声明，避免 archive hash 覆盖了 manifest 未授权的静态内容；backend contract 测试覆盖，并已重建运行中的 Memory Lab backend。 |
 | canonical remote skill identity | resolve 响应现在返回并校验不可变 `runtime_name`、activation/version/generation 与 archive hash；Provider 不再接受只凭 locator 伪造名称的 native get，A/B runner 镜像已重建并重启。 |
 | ACK replay semantics | 同一 `ack_id` 的重试忽略新的 transport `request_id` 并幂等返回；改变 generation/hash/status/provider revision 仍产生冲突，新增协议测试覆盖。 |
+| stale ACK error semantics | Memory Lab runtime bridge 对旧 generation/version 的 ACK 返回 `409 ACK_STALE`；resolve/admit 仍保留 `SKILL_VERSION_CHANGED`。真实 runner-a 请求在 activation generation=7 下使用 generation=6，得到 `409 ACK_STALE`。 |
 | scoped runtime credential fence | `AI_DSH_REQUIRE_SCOPED_RUNTIME=true` 时，全局 control secret 不再能用于带 runtime ID 的 runtime data-plane 请求；只有对应 runner credential 能通过，真实 runner-a catalog 仍返回 200。 |
 | queued skill terminal fact | queued `/ml-*` 在切版、停用、revoke 或正文加载失败时，会消费对应 admission queue 并写 `failed`/`cancelled` usage 终态，不再遗留 `admitted`。 |
 | terminal usage after revoke | 已准入 receipt 在 context、login grant 或权限撤销后仍可通过窄权限路径写入 `completed`/`failed`/`cancelled`；目录、resolve、admit 仍拒绝；同 `event_id` 改变 occurred_at/error_code/turn_ref 会返回 `IDEMPOTENCY_CONFLICT`。 |
