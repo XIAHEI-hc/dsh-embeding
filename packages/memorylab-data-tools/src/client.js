@@ -217,6 +217,9 @@ export class MemoryLabToolClient {
     form.set('request_id', randomUUID())
     form.set('context_id', binding.contextId)
     form.set('session_id', sessionId)
+    form.set('attachment_id', selectedRef.attachmentId)
+    form.set('attachment_bytes', String(selectedRef.bytes))
+    form.set('attachment_sha256', digest)
     form.set('file', new Blob([bytes], { type: 'text/csv' }), basename(actual))
     const timer = this.signal(exec)
     try {

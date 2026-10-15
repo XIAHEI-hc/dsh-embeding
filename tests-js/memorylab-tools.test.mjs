@@ -121,6 +121,9 @@ test('Memory Lab upload accepts only a CSV inside the DSH attachment store', asy
     uploaded = options.body instanceof FormData
     assert.equal(options.body.get('context_id'), 'context-a')
     assert.equal(options.body.get('session_id'), 'session-a')
+    assert.equal(options.body.get('attachment_id'), ref.attachmentId)
+    assert.equal(options.body.get('attachment_bytes'), String(ref.bytes))
+    assert.equal(options.body.get('attachment_sha256'), digest)
     assert.equal(options.headers['x-dsh-access-grant-id'], 'grant-a')
     return new Response(JSON.stringify({ ok: true, data: { job_id: 'job-a' } }), {
       status: 202, headers: { 'content-type': 'application/json' },
@@ -144,6 +147,9 @@ test('Memory Lab upload reads official file blocks and pending submission refere
   t.after(() => rmSync(root, { recursive: true, force: true }))
   t.mock.method(globalThis, 'fetch', async (_url, options) => {
     assert.equal(options.body.get('session_id'), 'session-a')
+    assert.equal(options.body.get('attachment_id'), ref.attachmentId)
+    assert.equal(options.body.get('attachment_bytes'), String(ref.bytes))
+    assert.equal(options.body.get('attachment_sha256'), digest)
     return new Response(JSON.stringify({ ok: true, data: { job_id: 'job-pending' } }), {
       status: 202, headers: { 'content-type': 'application/json' },
     })
