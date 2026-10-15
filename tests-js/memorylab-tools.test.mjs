@@ -17,6 +17,17 @@ function client(root, store) {
 
 const exec = { agent: { session: { header: { id: 'session-a' } } } }
 
+function execWithFile(ref) {
+  return {
+    agent: { session: {
+      header: { id: 'session-a' },
+      eventSource: { getSnapshot: () => ({ entries: [{ type: 'event', event: {
+        type: 'user/message', data: { message: { content: [{ type: 'file', attachment: ref }] } },
+      } }] }) },
+    } },
+  }
+}
+
 test('Memory Lab query scope comes only from the bound DSH session', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'memorylab-attachments-'))
   const store = { requireActive(id) {
@@ -81,7 +92,9 @@ test('Memory Lab tool definitions compile and register with the official schema 
 
 test('Memory Lab upload accepts only a CSV inside the DSH attachment store', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'memorylab-attachments-'))
-  const nested = join(root, 'aa', 'digest')
+  const digest = 'a'.repeat(64)
+  const ref = { attachmentId: `sha256:${digest}`, name: 'sample.csv', bytes: 31 }
+  const nested = join(root, 'aa', digest)
   mkdirSync(nested, { recursive: true })
   const csv = join(nested, 'sample.csv')
   const outside = join(tmpdir(), `outside-${Date.now()}.csv`)
@@ -102,8 +115,9 @@ test('Memory Lab upload accepts only a CSV inside the DSH attachment store', asy
       status: 202, headers: { 'content-type': 'application/json' },
     })
   })
-  assert.equal((await client(root, store).upload(csv, exec)).data.job_id, 'job-a')
+  assert.equal((await client(root, store).upload(csv, execWithFile(ref))).data.job_id, 'job-a')
   assert.equal(uploaded, true)
-  await assert.rejects(client(root, store).upload(outside, exec), /FILE_NOT_ALLOWED/u)
+  await assert.rejects(client(root, store).upload(outside, execWithFile(ref)), /FILE_NOT_ALLOWED/u)
+  await assert.rejects(client(root, store).upload({ attachmentId: `sha256:${'b'.repeat(64)}` }, execWithFile(ref)), /ATTACHMENT_SESSION_MISMATCH/u)
 })
 

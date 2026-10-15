@@ -8,6 +8,36 @@ function required(value, label) {
   return value
 }
 
+const FILE_ATTACHMENT_ID = /^sha256:([a-f0-9]{64})$/u
+
+function attachmentIdFromBlock(block) {
+  const id = block?.attachment?.attachmentId ?? block?.attachmentId
+  return typeof id === 'string' && FILE_ATTACHMENT_ID.test(id) ? id : undefined
+}
+
+function sessionAttachmentRefs(exec) {
+  const refs = new Map()
+  const session = exec?.agent?.session
+  const window = session?.eventSource?.getSnapshot?.()
+  for (const entry of window?.entries ?? []) {
+    const content = entry?.event?.data?.message?.content
+    for (const block of content ?? []) {
+      const ref = block?.attachment
+      const id = attachmentIdFromBlock(block)
+      if (id !== undefined) refs.set(id, ref)
+    }
+  }
+  const pending = session?.getSnapshot?.()?.pendingSubmissions ?? []
+  for (const submission of pending) {
+    for (const attachment of submission.attachments ?? []) {
+      const ref = attachment.value ?? attachment
+      const id = attachmentIdFromBlock(ref)
+      if (id !== undefined) refs.set(id, ref)
+    }
+  }
+  return refs
+}
+
 function secret() {
   const runner = process.env.WORKBENCH_ROLE === 'runner'
   const direct = process.env[runner ? 'MEMORYLAB_AI_RUNTIME_SECRET' : 'MEMORYLAB_AI_TOOL_SECRET']
@@ -81,6 +111,12 @@ export class MemoryLabToolClient {
     }
   }
 
+  filePathForRef(ref) {
+    const match = FILE_ATTACHMENT_ID.exec(ref?.attachmentId ?? '')
+    if (match === null || typeof ref?.name !== 'string' || basename(ref.name) !== ref.name) return undefined
+    return resolve(this.attachmentsRoot, match[1].slice(0, 2), match[1], ref.name)
+  }
+
   async query(tool, args, exec) {
     const { binding, sessionId } = this.binding(exec)
     const timer = this.signal(exec)
@@ -109,10 +145,15 @@ export class MemoryLabToolClient {
     }
     let candidate
     if (attachmentId !== undefined) {
-      if (typeof attachmentId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$/u.test(attachmentId)) {
-        throw new Error('ATTACHMENT_ID_INVALID: attachment_id must be an opaque file id')
+      if (typeof attachmentId !== 'string' || !FILE_ATTACHMENT_ID.test(attachmentId)) {
+        throw new Error('ATTACHMENT_ID_INVALID: attachment_id must be a canonical file reference')
       }
-      candidate = resolve(this.attachmentsRoot, attachmentId)
+      const refs = sessionAttachmentRefs(exec)
+      if (!refs.has(attachmentId)) {
+        throw new Error('ATTACHMENT_SESSION_MISMATCH: attachment is not present in the current DSH session')
+      }
+      candidate = this.filePathForRef(refs.get(attachmentId))
+      if (candidate === undefined) throw new Error('ATTACHMENT_REFERENCE_INVALID: missing file name')
     } else {
       if (typeof filePath !== 'string' || filePath.length === 0) throw new Error('FILE_PATH_INVALID')
       candidate = resolve(filePath)
@@ -120,6 +161,16 @@ export class MemoryLabToolClient {
     const actual = realpathSync(candidate)
     if (actual !== this.attachmentsRoot && !actual.startsWith(`${this.attachmentsRoot}${sep}`)) {
       throw new Error('FILE_NOT_ALLOWED: only a file attached in this DSH conversation can be uploaded')
+    }
+    const refs = sessionAttachmentRefs(exec)
+    const allowedPaths = new Set()
+    for (const ref of refs.values()) {
+      const path = this.filePathForRef(ref)
+      if (path === undefined) continue
+      try { allowedPaths.add(realpathSync(path)) } catch { /* missing attachment is rejected below */ }
+    }
+    if (!allowedPaths.has(actual)) {
+      throw new Error('ATTACHMENT_SESSION_MISMATCH: file is not present in the current DSH session')
     }
     if (extname(actual).toLowerCase() !== '.csv') throw new Error('FILE_TYPE_UNSUPPORTED: Memory Lab requires a CSV file')
     const info = statSync(actual)
