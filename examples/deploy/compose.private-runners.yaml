@@ -35,10 +35,6 @@ services:
         source: ./private/runner-a
         target: /private
         read_only: true
-      - type: bind
-        source: ${MEMORYLAB_SEED_DIR:?set read-only seed directory}
-        target: /seed
-        read_only: true
     networks: [dsh-internal]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -52,10 +48,6 @@ services:
       - type: bind
         source: ./private/runner-b
         target: /private
-        read_only: true
-      - type: bind
-        source: ${MEMORYLAB_SEED_DIR:?set read-only seed directory}
-        target: /seed
         read_only: true
     networks: [dsh-internal]
     cap_drop: [ALL]

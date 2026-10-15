@@ -41,6 +41,11 @@ MEMORYLAB_RUNTIME_VERIFY_TIMEOUT_MS=5000
 MEMORYLAB_RUNTIME_LIVE_CHECK_INTERVAL_MS=5000
 ```
 
+Each runner gets only its own `/private` bind. Its bootstrap seed is
+`/private/seed`; the deployment root is never mounted as a shared `/seed`, so
+runner A cannot copy or inspect runner B's private files while initializing
+its DSH_HOME.
+
 The private compose template defaults the host gateway port to `8875`, matching
 the `dsh_origin` advertised by the Memory Lab deployment. Keep the verifier
 origin and port explicit when invoking compose so a restart cannot silently

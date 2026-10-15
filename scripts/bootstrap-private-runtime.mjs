@@ -56,6 +56,10 @@ function embedConfig() {
 
 await mkdir(join(root, 'runner-a'), { recursive: true })
 await mkdir(join(root, 'runner-b'), { recursive: true })
+// The seed is private to each runner.  Never mount the deployment root as a
+// shared seed: it contains the other user's runner directory and credentials.
+await mkdir(join(root, 'runner-a', 'seed'), { recursive: true })
+await mkdir(join(root, 'runner-b', 'seed'), { recursive: true })
 const gatewayServiceSecret = secret()
 const scopeSecret = secret()
 const registry = {
@@ -94,6 +98,7 @@ for (const [name, runtime] of [['runner-a', 'runner-a'], ['runner-b', 'runner-b'
     `WORKBENCH_PUBLIC_URL=${publicOrigin}`,
     'WORKBENCH_DATA_DIR=/data',
     'DSH_HOME=/data/dsh-home',
+    'WORKBENCH_SEED_DIR=/private/seed',
     'WORKBENCH_WEB_WORKSPACE=/data/workdir',
     'WORKBENCH_RUNNER_BROKER_ORIGIN=http://dsh-gateway:8765',
     'WORKBENCH_RUNNER_CREDENTIAL_FILE=/private/runner-client-secret',
