@@ -85,9 +85,10 @@ async function admitRemotePrompt(integration, config, request, admittedPrompts, 
       runtimeId: binding.runtimeId, scope, locator: candidate.locator,
       invocationId: request.requestId, nativeRequestId: request.requestId, signal: controller.signal,
     })
-    const queue = admittedPrompts.get(request.sessionId) ?? []
-    queue.push({ invocationId: request.requestId, nativeRequestId: request.requestId, skillName: names[0], locator: candidate.locator })
-    admittedPrompts.set(request.sessionId, queue)
+    enqueueAdmittedPrompt(admittedPrompts, request.sessionId, {
+      invocationId: request.requestId, nativeRequestId: request.requestId,
+      skillName: names[0], locator: candidate.locator,
+    })
   } catch (error) {
     if (error instanceof WorkbenchExtensionError) throw error
     if (error?.code === 'SKILL_NOT_ENABLED' || error?.code === 'SKILL_VERSION_CHANGED') {
@@ -95,6 +96,20 @@ async function admitRemotePrompt(integration, config, request, admittedPrompts, 
     }
     throw new WorkbenchExtensionError('SKILL_PROVIDER_UNAVAILABLE', { cause: error })
   } finally { controller.abort() }
+}
+
+/**
+ * Prompt admission can be retried with the same native request id after a
+ * transport interruption. Memory Lab's receipt is idempotent, so the local
+ * pending queue must be idempotent as well or one invocation could produce
+ * duplicate terminal usage events and a stale queue entry.
+ */
+export function enqueueAdmittedPrompt(admittedPrompts, sessionId, item) {
+  const queue = admittedPrompts.get(sessionId) ?? []
+  if (queue.some(existing => existing.invocationId === item.invocationId)) return false
+  queue.push(item)
+  admittedPrompts.set(sessionId, queue)
+  return true
 }
 
 /**

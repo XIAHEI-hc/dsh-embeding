@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 import { isBindableInspection, verifyContext, verifySessionContext } from '../packages/workbench-extensions/src/integration.js'
-import { durableUsagePayload, drainUsageOutbox, recordUsageDurably } from '../packages/workbench-extensions/src/index.js'
+import { durableUsagePayload, drainUsageOutbox, recordUsageDurably, enqueueAdmittedPrompt } from '../packages/workbench-extensions/src/index.js'
 import { normalizePageSurface } from '../packages/workbench-extensions/src/page-surface.js'
 import { IntegrationStore, requestHash } from '@dsh-workbench/extensions/integration-store'
 
@@ -294,6 +294,14 @@ test('failed prepare reservations can be retried without allocating another sess
     assert.equal(retry.state, 'failed')
     assert.equal(retry.sessionId, 'session-stable')
   } finally { store.close(); f.close() }
+})
+
+test('prompt admission queue deduplicates a retried native request', () => {
+  const queues = new Map()
+  const item = { invocationId: 'request-1', nativeRequestId: 'request-1', skillName: 'ml-safe-v1' }
+  assert.equal(enqueueAdmittedPrompt(queues, 'session-a', item), true)
+  assert.equal(enqueueAdmittedPrompt(queues, 'session-a', { ...item, locator: { generation: 1 } }), false)
+  assert.deepEqual(queues.get('session-a'), [item])
 })
 
 test('usage outbox survives restart and deduplicates stable event ids', () => {
