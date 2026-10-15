@@ -46,7 +46,7 @@ bootstrap 向允许 origin 发送 `ready`。父页核对 `origin`、`source`、�
 
 Client 插件等待官方 workspace controller snapshot。首次进入时调用 `connectWorkspace(workspaceId)`，立即持久化返回的 session ID；刷新时校验该 session 仍属于授权工作区，再用 `openSession(sessionId)` 恢复同一对话。有初始 prompt 时，仅在当前 draft 为空且尚未应用时调用 `setDraft`；它永不自动提交，刷新和重连也不重新兑换 ticket 或新建会话。`connection.changed` 直接订阅官方 Connection 的 WebSocket/Host 恢复状态，不使用 `navigator.onLine` 代替服务可用性。
 
-P0 消息只有 `ready`、`initialized`、`session.opened`、`connection.changed`、`error`。P1 的任务与产物事件未实现，消息 schema 也不会伪造这些事件。
+嵌入消息包括 `ready`、`initialized`、`session.opened`、实际已发送的 `session.lifecycle`、`connection.changed` 和 `error`。`session.lifecycle` 只报告当前授权 workspace 内的 fork、delete、archive、unarchive。P1 的 `task.changed` 与 `artifact.created` 任务/产物事件未实现，消息 schema 不会伪造这些事件。
 
 ## 信任边界与限制
 

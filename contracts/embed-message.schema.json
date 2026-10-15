@@ -7,7 +7,7 @@
     "protocol": { "const": "dsh.embed" },
     "version": { "const": "1.0" },
     "type": {
-      "enum": ["ready", "init", "initialized", "session.opened", "connection.changed", "error"]
+      "enum": ["ready", "init", "initialized", "session.opened", "session.lifecycle", "connection.changed", "error"]
     },
     "channel_id": { "type": "string", "minLength": 1, "maxLength": 256 },
     "request_id": { "type": "string", "minLength": 1, "maxLength": 256 },
@@ -77,6 +77,24 @@
               "session_id": { "type": "string", "minLength": 1, "maxLength": 256 }
             },
             "required": ["workspace_id", "session_id"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "session.lifecycle" } }, "required": ["type"] },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "action": { "enum": ["forked", "deleted", "archived", "unarchived"] },
+              "session_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "parent_session_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "context_id": { "type": "string", "minLength": 1, "maxLength": 256 }
+            },
+            "required": ["action", "session_id"],
             "additionalProperties": false
           }
         }
