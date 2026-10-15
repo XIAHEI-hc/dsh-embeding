@@ -7,7 +7,8 @@ def test_private_runner_compose_does_not_mount_shared_seed():
     assert 'target: /seed' not in compose
 
 
-def test_private_runner_templates_use_runner_local_seed():
-    for name in ('runner-a.env', 'runner-b.env'):
-        text = Path('examples/deploy/private', name).read_text(encoding='utf-8')
-        assert 'WORKBENCH_SEED_DIR=/private/seed' in text
+def test_bootstrap_generates_runner_local_seed_path():
+    text = Path('scripts/bootstrap-private-runtime.mjs').read_text(encoding='utf-8')
+    assert "join(root, 'runner-a', 'seed')" in text
+    assert "join(root, 'runner-b', 'seed')" in text
+    assert "WORKBENCH_SEED_DIR=/private/seed" in text
