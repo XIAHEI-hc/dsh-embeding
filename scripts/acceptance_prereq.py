@@ -19,6 +19,6 @@ def require_acceptance_credentials(*names: str) -> None:
         "result": "BLOCKED",
         "reason": "MISSING_ACCEPTANCE_CREDENTIALS",
         "missing": missing,
-        "message": "需要合法的正式 A/B 登录凭据；脚本不会猜测或重置密码。",
-    }, ensure_ascii=False, indent=2))
+        "message": "legal A/B acceptance credentials are required; passwords are never guessed or reset",
+    }, ensure_ascii=True, indent=2))
     raise SystemExit(2)
