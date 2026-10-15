@@ -131,6 +131,11 @@ async def main_async():
     require(a_cancel["ok"], "A cannot cancel its own session")
     b_cancel_a = await remote_call(b_cookie, "session/cancel", {"sessionId": a_session})
     require(not b_cancel_a["ok"], "B cancelled A's session")
+    b_update_queue_a = await remote_call(b_cookie, "session/updateQueue", {
+        "sessionId": a_session, "itemId": "foreign-queue-probe-" + uuid.uuid4().hex,
+        "action": {"kind": "steer"},
+    })
+    require(not b_update_queue_a["ok"], "B updated A's queue")
 
     terminal_id = "scope-probe-" + uuid.uuid4().hex
     a_terminal = await remote_call(a_cookie, "terminal/create", {
@@ -163,6 +168,7 @@ async def main_async():
         "b_terminal_read_a_rejected": not b_terminal_a["ok"],
         "a_cancel_status": a_cancel["ok"],
         "b_cancel_a_rejected": not b_cancel_a["ok"],
+        "b_update_queue_a_rejected": not b_update_queue_a["ok"],
         "a_terminal_create_status": a_terminal["ok"],
         "b_terminal_create_a_rejected": not b_create_a_terminal["ok"],
         "a_terminal_close_status": a_close_terminal["ok"],
