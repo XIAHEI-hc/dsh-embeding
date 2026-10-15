@@ -30,8 +30,24 @@ export function verifyScope(token, secret, maxAgeMs = 8 * 60 * 60 * 1000, now = 
 }
 
 function parseCookies(value = '') {
-  return Object.fromEntries(value.split(';').map(item => item.trim().split('='))
-    .filter(([key, val]) => key && val).map(([key, val]) => [key, decodeURIComponent(val)]))
+  const parsed = {}
+  for (const item of value.split(';')) {
+    const separator = item.indexOf('=')
+    if (separator <= 0) continue
+    const key = item.slice(0, separator).trim()
+    const raw = item.slice(separator + 1).trim()
+    if (!key || !raw) continue
+    try { parsed[key] = decodeURIComponent(raw) } catch { /* malformed cookies fail closed below */ }
+  }
+  return parsed
+}
+
+function safeRedirectPath(value) {
+  if (typeof value !== 'string' || value.length === 0 || !value.startsWith('/') || value.startsWith('//')) return '/'
+  try {
+    const parsed = new URL(value, 'http://gateway.local')
+    return parsed.origin === 'http://gateway.local' ? `${parsed.pathname}${parsed.search}${parsed.hash}` : '/'
+  } catch { return '/' }
 }
 
 function writeJson(res, status, value, headers = {}) {
@@ -155,7 +171,7 @@ export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret,
       const handoff = ticket === null ? undefined : handoffs.get(ticket)
       if (ticket !== null) handoffs.delete(ticket)
       if (!handoff || handoff.expiresAt < Date.now()) return writeJson(res, 401, { error: { code: 'AUTH_REQUIRED' } })
-      const next = url.searchParams.get('next') || '/'
+      const next = safeRedirectPath(url.searchParams.get('next'))
       return res.writeHead(303, { location: next, 'set-cookie': `${COOKIE}=${encodeURIComponent(handoff.token)}; Path=/; HttpOnly; SameSite=Strict;${process.env.NODE_ENV === 'production' ? ' Secure;' : ''}` }).end()
     }
     const target = targetFor(req, registry, scopeSecret, Date.now(), maxAge)

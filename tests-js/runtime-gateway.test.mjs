@@ -49,6 +49,26 @@ test('gateway binds only a registry-owned subject and issues HttpOnly scope cook
   gateway.server.close()
 })
 
+test('gateway rejects malformed scope cookies and never redirects outside its origin', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-gateway-cookie-'))
+  const registryPath = join(root, 'registry.json')
+  writeFileSync(registryPath, JSON.stringify({ schema_version: '1.0', host_instance_id: 'instance-a', runtimes: [
+    { subject: 'user-a', runtime_id: 'runner-a', internal_origin: 'http://127.0.0.1:9', status: 'ready' },
+  ] }))
+  const gateway = createRuntimeGateway({ registryPath, scopeSecret: 'scope-secret', serviceSecret: 'service-secret' })
+  await new Promise(resolve => gateway.server.listen(0, '127.0.0.1', resolve))
+  const address = gateway.server.address()
+  const base = `http://127.0.0.1:${address.port}`
+  const malformed = await fetch(`${base}/api/native`, { headers: { cookie: 'dsh_scope=%E0%A4%A' } })
+  assert.equal(malformed.status, 401)
+  const bound = await fetch(`${base}/internal/scope/bind`, { method: 'POST', headers: { authorization: 'Bearer service-secret', 'content-type': 'application/json' }, body: JSON.stringify({ subject: 'user-a', runtime_id: 'runner-a', context_id: 'ctx-a', session_id: 'session-a', access_grant_id: 'grant-a' }) })
+  const ticket = (await bound.json()).scope_ticket
+  const redeemed = await fetch(`${base}/scope/redeem?ticket=${encodeURIComponent(ticket)}&next=https%3A%2F%2Fevil.example%2Fsteal`, { redirect: 'manual' })
+  assert.equal(redeemed.status, 303)
+  assert.equal(redeemed.headers.get('location'), '/')
+  gateway.server.close()
+})
+
 test('gateway performs a live Memory Lab lease check before forwarding native requests', async () => {
   const root = mkdtempSync(join(tmpdir(), 'dsh-gateway-live-'))
   let forwardedHeaders
