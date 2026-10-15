@@ -61,6 +61,15 @@ function providerScope(integration, sessionId) {
   return { binding, scope: { context_id: binding.contextId, session_id: binding.sessionId, access_grant_id: binding.accessGrantId } }
 }
 
+function sameProviderBinding(left, right) {
+  return left !== undefined && right !== undefined
+    && left.sessionId === right.sessionId
+    && left.contextId === right.contextId
+    && left.accessGrantId === right.accessGrantId
+    && left.runtimeId === right.runtimeId
+    && left.instanceId === right.instanceId
+}
+
 async function admitRemotePrompt(integration, config, request, admittedPrompts, getProvider) {
   const names = remoteSkillNames(request.content)
   if (names.length === 0) return
@@ -454,10 +463,12 @@ export async function apply(ctx) {
   const ensureRemoteProvider = (agent, signal) => {
     const sessionId = agent.session.id
     const existing = sessionProviders.get(sessionId)
-    if (existing !== undefined) {
+    const currentBinding = existing === undefined ? undefined : integration.store.requireActive(sessionId)
+    if (existing !== undefined && sameProviderBinding(existing.binding, currentBinding)) {
       agentProviders.set(agent, existing)
       return existing
     }
+    if (existing !== undefined) sessionProviders.delete(sessionId)
     const { binding, scope } = providerScope(integration, sessionId)
     const provider = createRemoteProvider({
       baseUrl: integrationConfig.apiOrigin,
@@ -571,8 +582,9 @@ export async function apply(ctx) {
     }, { global: true })
     const providerForSession = (sessionId, signal) => {
       const existing = sessionProviders.get(sessionId)
-      if (existing !== undefined) return existing.provider
       const binding = integration.store.requireActive(sessionId)
+      if (existing !== undefined && sameProviderBinding(existing.binding, binding)) return existing.provider
+      if (existing !== undefined) sessionProviders.delete(sessionId)
       const scope = { context_id: binding.contextId, session_id: binding.sessionId, access_grant_id: binding.accessGrantId }
       const provider = createRemoteProvider({
         baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
