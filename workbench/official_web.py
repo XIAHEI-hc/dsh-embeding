@@ -87,6 +87,30 @@ def initialize_runner_workspace(workspace, seed=None, role='standalone'):
     return True
 
 
+def inject_secret_file(env, value_name, file_name):
+    """Load one process secret from a deployment-owned read-only file.
+
+    The value is copied only into the child DSH process environment.  It is
+    never returned, logged, or written to a workspace, so each runner can have
+    an independent model credential without placing it in browser-visible
+    configuration.
+    """
+    if (env.get(value_name) or '').strip():
+        return False
+    path_value = (env.get(file_name) or '').strip()
+    if not path_value:
+        return False
+    path = Path(path_value)
+    try:
+        value = path.read_text(encoding='utf-8').strip()
+    except OSError as error:
+        raise RuntimeError(f'{file_name} 指向的 secret file 无法读取') from error
+    if not value:
+        raise RuntimeError(f'{file_name} 指向的 secret file 为空')
+    env[value_name] = value
+    return True
+
+
 def nginx_config(port, upstream_port, temp_dir):
     if not (1 <= port <= 65535 and 1 <= upstream_port <= 65535) or port == upstream_port:
         raise ValueError('代理端口和官方 Web 内部端口必须不同，且位于 1..65535')
@@ -162,6 +186,7 @@ def serve(host, port, upstream_port=18765, trusted_hosts=()):
         role,
     )
     env = os.environ.copy(); env['DSH_HOME'] = str(home); env['WORKBENCH_PUBLIC_URL'] = exposed
+    inject_secret_file(env, 'DEEPSEEK_API_KEY', 'DEEPSEEK_API_KEY_FILE')
     bootstrap = home / 'workbench-web.patch.json'
     patches = [{'id':'workspace-controller','config':{
         'documentsDirectory':str(workspace),'documentsLookupTimeoutMs':10000}}]

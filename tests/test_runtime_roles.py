@@ -1,6 +1,6 @@
 import pytest
 
-from workbench.official_web import initialize_runner_workspace, validate_runtime_role
+from workbench.official_web import initialize_runner_workspace, inject_secret_file, validate_runtime_role
 
 
 def test_runner_rejects_control_plane_secret():
@@ -44,3 +44,26 @@ def test_runner_workspace_is_seeded_once_without_overwriting_user_files(tmp_path
 def test_runner_workspace_requires_seed_directory(tmp_path):
     with pytest.raises(RuntimeError, match="seed"):
         initialize_runner_workspace(tmp_path / "workspace", tmp_path / "missing", "runner")
+
+
+def test_model_secret_file_is_injected_without_exposing_file_contents(tmp_path):
+    secret_file = tmp_path / "deepseek-api-key"
+    secret_file.write_text("  key-for-runner-a\n", encoding="utf-8")
+    env = {"DEEPSEEK_API_KEY_FILE": str(secret_file)}
+    assert inject_secret_file(env, "DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY_FILE") is True
+    assert env["DEEPSEEK_API_KEY"] == "key-for-runner-a"
+
+
+def test_explicit_model_secret_takes_precedence_over_secret_file(tmp_path):
+    secret_file = tmp_path / "deepseek-api-key"
+    secret_file.write_text("file-value", encoding="utf-8")
+    env = {"DEEPSEEK_API_KEY": "env-value", "DEEPSEEK_API_KEY_FILE": str(secret_file)}
+    assert inject_secret_file(env, "DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY_FILE") is False
+    assert env["DEEPSEEK_API_KEY"] == "env-value"
+
+
+def test_empty_model_secret_file_fails_closed(tmp_path):
+    secret_file = tmp_path / "deepseek-api-key"
+    secret_file.write_text("\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="为空"):
+        inject_secret_file({"DEEPSEEK_API_KEY_FILE": str(secret_file)}, "DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY_FILE")
