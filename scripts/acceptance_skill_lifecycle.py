@@ -30,10 +30,14 @@ def login():
     return s, bootstrap.json()
 
 
+def container_name():
+    return os.environ.get("DSH_RUNNER_A_CONTAINER", "deploy-dsh-user-a-1")
+
+
 def runtime_secret():
     raw = subprocess.check_output([
         "wsl.exe", "-d", "Ubuntu", "--exec", "docker", "exec",
-        "dsh-workbench-dsh-user-a-1", "cat", "/private/runner-client-secret",
+        container_name(), "cat", "/private/runner-client-secret",
     ], stderr=subprocess.DEVNULL, text=True)
     return raw.strip().splitlines()[-1].strip()
 

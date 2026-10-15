@@ -23,8 +23,16 @@ def docker(*args):
     ).strip()
 
 
+def container(env_name, default):
+    """Resolve a compose container name without coupling probes to one project name."""
+    return os.environ.get(env_name, default)
+
+
 def runner_secret():
-    return docker("exec", "dsh-workbench-dsh-user-a-1", "cat", "/private/runner-client-secret").splitlines()[-1].strip()
+    return docker(
+        "exec", container("DSH_RUNNER_A_CONTAINER", "deploy-dsh-user-a-1"),
+        "cat", "/private/runner-client-secret",
+    ).splitlines()[-1].strip()
 
 
 def wait_http(url, expected=200, timeout=45):
@@ -98,15 +106,15 @@ def main():
     before_root = session.get(GW + "/", allow_redirects=False)
     before_catalog = catalog(scope)
 
-    restart("dsh-workbench-dsh-user-a-1")
+    restart(container("DSH_RUNNER_A_CONTAINER", "deploy-dsh-user-a-1"))
     wait_http(GW + "/health")
     after_runner_root = wait_session_response(session, GW + "/")
 
-    restart("dsh-workbench-dsh-gateway-1")
+    restart(container("DSH_GATEWAY_CONTAINER", "deploy-dsh-gateway-1"))
     wait_http(GW + "/health")
     after_gateway_root = wait_session_response(session, GW + "/")
 
-    restart("private_mem_lab-backend-1")
+    restart(container("MEMORYLAB_BACKEND_CONTAINER", "private_mem_lab-backend-1"))
     wait_http(ML + "/api/platform/health")
     after_backend_root = wait_session_response(session, GW + "/")
     after_catalog = catalog(scope)
