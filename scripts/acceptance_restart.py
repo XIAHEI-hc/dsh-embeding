@@ -10,6 +10,7 @@ import time
 import uuid
 
 import requests
+from acceptance_prereq import require_acceptance_credentials
 
 ML = "http://127.0.0.1:9000"
 GW = "http://127.0.0.1:8875"
@@ -89,6 +90,7 @@ def restart(container):
 
 
 def main():
+    require_acceptance_credentials("ACCEPTANCE_USER_A_PASSWORD")
     session, bootstrap = login_and_bootstrap()
     scope = {"context_id": bootstrap["context_id"], "session_id": bootstrap["session_id"],
              "access_grant_id": bootstrap["access_grant_id"]}

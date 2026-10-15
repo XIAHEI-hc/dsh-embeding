@@ -7,12 +7,14 @@ import uuid
 
 import requests
 import websockets
+from acceptance_prereq import require_acceptance_credentials
 
 ML = "http://127.0.0.1:9000"
 GW = "http://127.0.0.1:8875"
 
 
 async def main_async():
+    require_acceptance_credentials("ACCEPTANCE_USER_A_PASSWORD")
     session = requests.Session()
     login = session.post(ML + "/api/auth/login", json={
         "username": os.environ.get("ACCEPTANCE_USER_A_USERNAME", "admin"),

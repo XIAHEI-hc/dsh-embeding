@@ -2,6 +2,7 @@ import json
 import os
 import uuid
 import requests
+from acceptance_prereq import require_acceptance_credentials
 
 BASE = "http://127.0.0.1:9000"
 
@@ -32,6 +33,7 @@ def require(condition, message):
         raise AssertionError(message)
 
 def main():
+    require_acceptance_credentials("ACCEPTANCE_USER_A_PASSWORD", "ACCEPTANCE_USER_B_PASSWORD")
     a, au = login(os.environ.get("ACCEPTANCE_USER_A_USERNAME", "admin"), os.environ["ACCEPTANCE_USER_A_PASSWORD"])
     b, bu = login(os.environ.get("ACCEPTANCE_USER_B_USERNAME", "acceptance_b"), os.environ["ACCEPTANCE_USER_B_PASSWORD"])
     ast, ab = call(a, "POST", "/api/ai/bootstrap", {"request_id": "acceptance-a-" + str(uuid.uuid4())})

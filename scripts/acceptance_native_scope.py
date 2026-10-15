@@ -12,6 +12,7 @@ import uuid
 
 import requests
 import websockets
+from acceptance_prereq import require_acceptance_credentials
 
 ML = os.environ.get("MEMORYLAB_BASE", "http://127.0.0.1:9000")
 GW = os.environ.get("DSH_GATEWAY", "http://127.0.0.1:8875")
@@ -69,6 +70,7 @@ def require(condition, message):
 
 
 async def main_async():
+    require_acceptance_credentials("ACCEPTANCE_USER_A_PASSWORD", "ACCEPTANCE_USER_B_PASSWORD")
     _, a_scope, a_cookie = login(
         os.environ.get("ACCEPTANCE_USER_A_USERNAME", "admin"),
         os.environ["ACCEPTANCE_USER_A_PASSWORD"],

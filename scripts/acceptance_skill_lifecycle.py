@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timezone
 
 import requests
+from acceptance_prereq import require_acceptance_credentials
 
 BASE = os.environ.get("MEMORYLAB_BASE", "http://127.0.0.1:9000")
 RUNTIME = os.environ.get("RUNTIME_ID", "runner-a")
@@ -46,6 +47,7 @@ def runtime_call(secret, path, body):
 
 
 def main():
+    require_acceptance_credentials("ACCEPTANCE_USER_A_PASSWORD")
     s, bootstrap = login()
     activation = s.get(BASE + "/api/skills/me/activations").json()["items"][0]
     skill_id = activation["skill_id"]
