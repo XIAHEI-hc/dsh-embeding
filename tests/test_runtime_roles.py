@@ -27,6 +27,29 @@ def test_standalone_role_is_compatible_without_multi_user_settings():
     assert validate_runtime_role({"WORKBENCH_ROLE": "standalone"}) == "standalone"
 
 
+def test_standalone_role_rejects_stale_host_integrations():
+    with pytest.raises(ValueError, match="禁止启用宿主集成"):
+        validate_runtime_role({
+            "WORKBENCH_ROLE": "standalone",
+            "MEMORYLAB_AI_INTEGRATION_ENABLED": "true",
+        })
+
+
+def test_standalone_role_rejects_embedded_mode():
+    with pytest.raises(ValueError, match="不能使用 embedded"):
+        validate_runtime_role({
+            "WORKBENCH_ROLE": "standalone",
+            "WORKBENCH_INTEGRATION_MODE": "embedded_multi_user",
+        })
+
+
+def test_legacy_no_role_configuration_remains_compatible():
+    assert validate_runtime_role({
+        "MEMORYLAB_AI_INTEGRATION_ENABLED": "true",
+        "WORKBENCH_INTEGRATION_MODE": "embedded_single_user_legacy",
+    }) == "standalone"
+
+
 def test_runner_workspace_is_seeded_once_without_overwriting_user_files(tmp_path):
     seed = tmp_path / "seed"
     workspace = tmp_path / "workspace"

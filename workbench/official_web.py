@@ -48,10 +48,25 @@ def validate_runtime_role(env=None):
     Memory Lab service bearer used by the gateway.
     """
     env = os.environ if env is None else env
-    role = (env.get('WORKBENCH_ROLE') or 'standalone').strip().lower()
+    raw_role = (env.get('WORKBENCH_ROLE') or '').strip()
+    role = (raw_role or 'standalone').lower()
     if role not in ('standalone', 'gateway', 'runner'):
         raise ValueError('WORKBENCH_ROLE 必须是 standalone、gateway 或 runner')
     mode = (env.get('WORKBENCH_INTEGRATION_MODE') or '').strip().lower()
+    # Standalone is the explicit rollback mode.  Do not let stale integration
+    # flags from an embedded deployment silently re-enable a Memory Lab or
+    # Probe extension in the shared single-user process.  The caller can still
+    # choose embedded_single_user_legacy or embedded_multi_user explicitly.
+    # Keep the historical no-role single-user launcher compatible.  The
+    # stronger rollback fence applies once deployment explicitly selects the
+    # standalone role, so an old local .env can be migrated deliberately.
+    if role == 'standalone' and raw_role:
+        enabled = [name for name in ('MEMORYLAB_AI_INTEGRATION_ENABLED', 'PROBE_AI_INTEGRATION_ENABLED')
+                   if (env.get(name) or '').strip().lower() in ('true', '1', 'yes', 'on')]
+        if enabled:
+            raise ValueError('standalone role 禁止启用宿主集成；请关闭集成开关或选择明确的 embedded 模式')
+        if mode not in ('', 'standalone'):
+            raise ValueError('standalone role 不能使用 embedded 集成模式')
     if role == 'runner':
         if mode != 'embedded_multi_user':
             raise ValueError('runner role 必须使用 WORKBENCH_INTEGRATION_MODE=embedded_multi_user')
