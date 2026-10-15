@@ -298,3 +298,24 @@ machine-readable payload and never prints inherited environment values.
 The probe has been syntax-checked but is not counted as PASS until run against
 the current live A/B accounts. It does not create users, reset passwords, or
 alter volumes.
+
+## 2026-10-16 current implementation baseline
+
+The continuation work is maintained on independent feature branches:
+
+| repository | branch | current automated result |
+|---|---|---|
+| DSH | `codex/dsh-memorylab-runtime-bridge` | 64 JavaScript tests passed; extension syntax check passed; standalone native Web smoke passed |
+| Memory Lab | `codex/memorylab-runtime-bridge` | 91 backend tests passed; 1 existing Starlette/httpx deprecation warning; Alembic reports no new operations |
+
+The scoped deployment also passes the cross-repository runtime configuration
+check: `runner-a` and `runner-b` IDs and immutable subjects match between the
+DSH registry and Memory Lab overlay, both runner credentials meet the minimum
+length, and no credential value is printed by the checker. The gateway refuses
+to start when a ready runtime has a missing, unreadable, or weak control secret.
+
+The supported field entry point is `npm run test:acceptance`. With formal A/B
+credentials it runs the five live probes and returns one JSON summary. Without
+those credentials the current result is `BLOCKED` with five blocked probes and
+zero implementation failures; this remains an input prerequisite rather than a
+code result.
