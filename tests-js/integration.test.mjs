@@ -309,3 +309,21 @@ test('Memory Lab session status verifier binds context, session, grant, and inst
     globalThis.fetch = originalFetch
   }
 })
+
+test('Memory Lab session status verifier maps a revoked lease to CONTEXT_REVOKED', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    ok: false, error: { code: 'CONTEXT_REVOKED', message: '授权已撤销' },
+  }), { status: 403, headers: { 'content-type': 'application/json' } })
+  try {
+    await assert.rejects(
+      verifySessionContext({
+        apiOrigin: 'http://memorylab.test', instanceId: 'instance-a', toolSecret: 's'.repeat(32),
+        verifyTimeoutMs: 1000,
+      }, 'context-a', 'session-a', 'grant-a'),
+      { code: 'CONTEXT_REVOKED' },
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
