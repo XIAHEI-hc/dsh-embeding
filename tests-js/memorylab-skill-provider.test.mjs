@@ -28,6 +28,20 @@ test('provider rejects candidates from another scope', async () => {
   await assert.rejects(provider.get({ provider: 'memorylab-remote', locator: { owner: 'ctx-b' } }), { code: 'SCOPE_DENIED' })
 })
 
+test('provider rejects a resolve response whose canonical identity changed', async () => {
+  const provider = createRemoteProvider({
+    baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope,
+    fetchImpl: async () => ({ ok: true, json: async () => ({
+      runtime_name: 'ml-other-v1-0-0-hash', activation_id: 'a', version_id: 'v', generation: 2,
+      archive_sha256: 'a'.repeat(64), instruction: 'Use facts.', instruction_sha256: 'c'.repeat(64),
+    }) }),
+  })
+  await assert.rejects(provider.get({
+    name: 'ml-chn-v1-0-0-habc', provider: 'memorylab-remote',
+    locator: { owner: 'ctx-a', activation_id: 'a', version_id: 'v', generation: 2, archive_sha256: 'a'.repeat(64) },
+  }), { code: 'SKILL_VERSION_CHANGED' })
+})
+
 test('synchronizer acknowledges only a self-checked fixed version', async () => {
   const calls = []
   const fetchImpl = async (url, options) => {
@@ -47,4 +61,11 @@ test('synchronizer acknowledges only a self-checked fixed version', async () => 
   ])
   assert.equal(calls[2].body.status, 'installed')
   assert.equal(calls[2].body.generation, 3)
+})
+
+test('synchronizer refuses to acknowledge a canonical runtime name mismatch', async () => {
+  const fetchImpl = async (url) => ({ ok: true, json: async () => url.endsWith('/catalog')
+    ? { catalog_revision: 'rev-1', items: [{ desired_enabled: true, runtime_name: 'ml-expected-v1-0-0-habc', activation_id: 'a', version_id: 'v', generation: 3, archive_sha256: 'a'.repeat(64) }] }
+    : { runtime_name: 'ml-wrong-v1-0-0-hdef', activation_id: 'a', version_id: 'v', generation: 3, archive_sha256: 'a'.repeat(64), instruction: 'Use facts.', instruction_sha256: 'c'.repeat(64) } })
+  await assert.rejects(synchronizeRemoteProvider({ baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope, fetchImpl }), { code: 'HASH_MISMATCH' })
 })
