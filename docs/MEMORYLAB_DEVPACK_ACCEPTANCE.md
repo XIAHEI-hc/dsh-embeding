@@ -263,3 +263,22 @@ scoped_http_after_logout_status  403
 The native WebSocket close code was `1006` because the gateway destroys the
 socket after the lease check fails; the security result is the close itself and
 the subsequent `403` fence.
+
+## 2026-10-16 continuation: native RPC isolation probe
+
+Added `scripts/acceptance_native_scope.py`, which speaks the official DSH
+Remote Stream Mux at `/api/remote.mux` rather than private extension routes.
+After two valid Memory Lab logins it exercises `session/list`, `session/rename`,
+`session/fork`, `workspaceFiles/list`, and `terminal/list`; A's own operations
+must succeed while B's attempts against A's session must return Remote errors.
+The script prints only opaque session IDs and boolean outcomes:
+
+```powershell
+$env:ACCEPTANCE_USER_A_PASSWORD = '<provided-out-of-band>'
+$env:ACCEPTANCE_USER_B_PASSWORD = '<provided-out-of-band>'
+python scripts/acceptance_native_scope.py
+```
+
+The probe has been syntax-checked but is not counted as PASS until run against
+the current live A/B accounts. It does not create users, reset passwords, or
+alter volumes.
