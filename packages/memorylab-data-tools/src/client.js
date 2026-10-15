@@ -218,16 +218,33 @@ export class MemoryLabToolClient {
     if (digest !== expected || bytes.byteLength !== selectedRef.bytes) {
       throw new Error('ATTACHMENT_HASH_MISMATCH: attachment bytes do not match the session reference')
     }
-    const form = new FormData()
-    form.set('request_id', randomUUID())
-    form.set('context_id', binding.contextId)
-    form.set('session_id', sessionId)
-    form.set('attachment_id', selectedRef.attachmentId)
-    form.set('attachment_bytes', String(selectedRef.bytes))
-    form.set('attachment_sha256', digest)
-    form.set('file', new Blob([bytes], { type: 'text/csv' }), basename(actual))
     const timer = this.signal(exec)
     try {
+      const admissionBody = new FormData()
+      admissionBody.set('request_id', randomUUID())
+      admissionBody.set('context_id', binding.contextId)
+      admissionBody.set('session_id', sessionId)
+      admissionBody.set('attachment_id', selectedRef.attachmentId)
+      admissionBody.set('sha256', digest)
+      admissionBody.set('size_bytes', String(bytes.byteLength))
+      // Keep the wire names used by the upload contract as aliases so older
+      // broker adapters can inspect the same immutable snapshot.
+      admissionBody.set('attachment_bytes', String(bytes.byteLength))
+      admissionBody.set('attachment_sha256', digest)
+      admissionBody.set('filename', basename(actual))
+      const admission = await fetch(`${this.origin}/api/ai/tool-attachment-admit`, {
+        method: 'POST', headers: this.headers(binding), body: admissionBody,
+        signal: timer.signal,
+      })
+      await this.result(admission)
+      const form = new FormData()
+      form.set('request_id', randomUUID())
+      form.set('context_id', binding.contextId)
+      form.set('session_id', sessionId)
+      form.set('attachment_id', selectedRef.attachmentId)
+      form.set('attachment_bytes', String(selectedRef.bytes))
+      form.set('attachment_sha256', digest)
+      form.set('file', new Blob([bytes], { type: 'text/csv' }), basename(actual))
       const response = await fetch(`${this.origin}/api/ai/tool-upload`, {
         method: 'POST', headers: this.headers(binding), body: form, signal: timer.signal,
       })
