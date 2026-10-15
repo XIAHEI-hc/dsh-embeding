@@ -34,7 +34,11 @@ For a real model deployment, give each runner its own read-only model secret
 file and set `DEEPSEEK_API_KEY_FILE` in that runner's env file. The launcher
 loads the value only into that runner's child DSH process; it is never exposed
 through the iframe, workspace files, browser state, logs, or the gateway. Do
-not put a shared model key in the checked-in env templates.
+not put a shared model key in the checked-in env templates. The Memory Lab
+backend `.env` must not contain `DEEPSEEK_API_KEY` at all: the backend is the
+trusted control plane and only receives DSH runtime/control credentials from
+the secret-managed runtime env. A model key belongs exclusively in the
+matching runner's private key file.
 
 The deployment-local `gateway.env` must also set:
 
