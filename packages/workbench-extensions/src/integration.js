@@ -21,7 +21,14 @@ function exactKeys(body, allowed) {
   }
 }
 
-async function verifyContext(config, contextId, signal, runtimeRegistry, accessGrantId) {
+export async function verifyContext(config, contextId, signal, runtimeRegistry, accessGrantId) {
+  // Memory Lab scopes are grant-bound end to end.  Do not allow a caller to
+  // reach the upstream verifier without carrying the exact browser grant;
+  // otherwise the upstream may be asked to infer identity from a mutable
+  // session association after login rotation.
+  if (config.integrationKind === 'memorylab' && accessGrantId === undefined) {
+    throw new WorkbenchExtensionError('CONTEXT_REVOKED')
+  }
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(new Error('verify timeout')), config.verifyTimeoutMs)
   const combined = signal === undefined ? controller.signal : AbortSignal.any([signal, controller.signal])

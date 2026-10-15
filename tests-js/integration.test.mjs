@@ -4,8 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { isBindableInspection } from '../packages/workbench-extensions/src/integration.js'
-import { verifySessionContext } from '../packages/workbench-extensions/src/integration.js'
+import { isBindableInspection, verifyContext, verifySessionContext } from '../packages/workbench-extensions/src/integration.js'
 import { durableUsagePayload, drainUsageOutbox, recordUsageDurably } from '../packages/workbench-extensions/src/index.js'
 import { normalizePageSurface } from '../packages/workbench-extensions/src/page-surface.js'
 import { IntegrationStore, requestHash } from '@dsh-workbench/extensions/integration-store'
@@ -17,6 +16,13 @@ function fixture() {
 }
 
 const metadata = { project_id: 'project-a', function_type: 'SITE_DESIGN' }
+
+test('Memory Lab context verification requires the exact browser grant', async () => {
+  await assert.rejects(
+    verifyContext({ integrationKind: 'memorylab' }, 'context-a'),
+    { code: 'CONTEXT_REVOKED' },
+  )
+})
 
 test('official initialization events keep a session bindable until its first turn', () => {
   const base = {
