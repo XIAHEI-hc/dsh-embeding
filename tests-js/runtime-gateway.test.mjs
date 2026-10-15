@@ -30,7 +30,7 @@ test('gateway binds only a registry-owned subject and issues HttpOnly scope cook
   const root = mkdtempSync(join(tmpdir(), 'dsh-gateway-'))
   const registryPath = join(root, 'registry.json')
   const runtimeSecretPath = join(root, 'runner-secret')
-  writeFileSync(runtimeSecretPath, 'runner-secret')
+  writeFileSync(runtimeSecretPath, 'runner-secret-012345678901234567890123')
   writeFileSync(registryPath, JSON.stringify({ schema_version: '1.0', host_instance_id: 'instance-a', runtimes: [
     { subject: 'user-a', runtime_id: 'runner-a', internal_origin: 'http://127.0.0.1:9', control_secret_file: runtimeSecretPath, status: 'ready' },
   ] }))
@@ -55,7 +55,7 @@ test('gateway rejects malformed scope cookies and never redirects outside its or
   const root = mkdtempSync(join(tmpdir(), 'dsh-gateway-cookie-'))
   const registryPath = join(root, 'registry.json')
   const runtimeSecretPath = join(root, 'runner-secret')
-  writeFileSync(runtimeSecretPath, 'runner-secret')
+  writeFileSync(runtimeSecretPath, 'runner-secret-012345678901234567890123')
   writeFileSync(registryPath, JSON.stringify({ schema_version: '1.0', host_instance_id: 'instance-a', runtimes: [
     { subject: 'user-a', runtime_id: 'runner-a', internal_origin: 'http://127.0.0.1:9', control_secret_file: runtimeSecretPath, status: 'ready' },
   ] }))
@@ -82,6 +82,17 @@ test('gateway refuses a ready registry without runner control credentials', () =
   assert.throws(() => createRuntimeGateway({ registryPath, scopeSecret: 'scope-secret', serviceSecret: 'service-secret' }), { code: 'CONFIG_INVALID' })
 })
 
+test('gateway refuses an unreadable or weak runner control credential', () => {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-gateway-invalid-secret-'))
+  const registryPath = join(root, 'registry.json')
+  const runtimeSecretPath = join(root, 'runner-secret')
+  writeFileSync(runtimeSecretPath, 'too-short')
+  writeFileSync(registryPath, JSON.stringify({ schema_version: '1.0', host_instance_id: 'instance-a', runtimes: [
+    { subject: 'user-a', runtime_id: 'runner-a', internal_origin: 'http://127.0.0.1:9', control_secret_file: runtimeSecretPath, status: 'ready' },
+  ] }))
+  assert.throws(() => createRuntimeGateway({ registryPath, scopeSecret: 'scope-secret', serviceSecret: 'service-secret' }), { code: 'CONFIG_INVALID' })
+})
+
 test('gateway target validation rejects absolute-form and network-path targets', () => {
   assert.equal(safeUpstreamTarget('/api/native?x=1', 'http://runner:8765').origin, 'http://runner:8765')
   assert.equal(safeUpstreamTarget('http://evil.example/steal', 'http://runner:8765'), undefined)
@@ -96,7 +107,7 @@ test('gateway performs a live Memory Lab lease check before forwarding native re
   const upstreamAddress = upstream.address()
   const registryPath = join(root, 'registry.json')
   const runtimeSecretPath = join(root, 'runner-secret')
-  writeFileSync(runtimeSecretPath, 'runner-secret')
+  writeFileSync(runtimeSecretPath, 'runner-secret-012345678901234567890123')
   writeFileSync(registryPath, JSON.stringify({ schema_version: '1.0', host_instance_id: 'instance-a', runtimes: [
     { subject: 'user-a', runtime_id: 'runner-a', internal_origin: `http://127.0.0.1:${upstreamAddress.port}`, control_secret_file: runtimeSecretPath, status: 'ready' },
   ] }))
@@ -129,7 +140,7 @@ test('gateway performs a live Memory Lab lease check before forwarding native re
   assert.equal(forwardedHeaders['x-dsh-scope-session-id'], 'session-a')
   assert.equal(forwardedHeaders['x-dsh-access-grant-id'], 'grant-a')
   const proofBody = JSON.stringify({ subject: 'user-a', runtime_id: 'runner-a', context_id: 'ctx-a', session_id: 'session-a', access_grant_id: 'grant-a' })
-  assert.equal(forwardedHeaders['x-dsh-scope-proof'], createHmac('sha256', 'runner-secret').update(proofBody).digest('base64url'))
+  assert.equal(forwardedHeaders['x-dsh-scope-proof'], createHmac('sha256', 'runner-secret-012345678901234567890123').update(proofBody).digest('base64url'))
   scopeMatches = false
   const mismatched = await fetch(`${base}/api/native`, { headers: { cookie } })
   assert.equal(mismatched.status, 403)
@@ -150,7 +161,7 @@ test('gateway preserves the Connection: Upgrade header for native WebSocket clie
   const upstreamAddress = upstream.address()
   const registryPath = join(root, 'registry.json')
   const runtimeSecretPath = join(root, 'runner-secret')
-  writeFileSync(runtimeSecretPath, 'runner-secret')
+  writeFileSync(runtimeSecretPath, 'runner-secret-012345678901234567890123')
   writeFileSync(registryPath, JSON.stringify({ schema_version: '1.0', host_instance_id: 'instance-a', runtimes: [
     { subject: 'user-a', runtime_id: 'runner-a', internal_origin: `http://127.0.0.1:${upstreamAddress.port}`, control_secret_file: runtimeSecretPath, status: 'ready' },
   ] }))

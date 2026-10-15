@@ -45,6 +45,15 @@ export function loadRuntimeRegistry(pathValue = process.env.WORKBENCH_RUNTIME_RE
     if (options.requireControlSecrets === true && controlSecretFile === undefined) {
       fail(`runtimes[${index}].control_secret_file 在 scoped gateway 中必须配置`)
     }
+    if (options.requireControlSecrets === true) {
+      let secret
+      try { secret = readFileSync(controlSecretFile, 'utf8').trim() } catch {
+        fail(`runtimes[${index}].control_secret_file 不可读取`)
+      }
+      if (typeof secret !== 'string' || Buffer.byteLength(secret) < 32) {
+        fail(`runtimes[${index}] 的 control secret 至少需要 32 字节`)
+      }
+    }
     return Object.freeze({ subject, runtimeId, internalOrigin: exactOrigin(item.internal_origin, `runtimes[${index}].internal_origin`), status, controlSecretFile })
   })
   return Object.freeze({ schemaVersion: '1.0', hostInstanceId, runtimes: Object.freeze(runtimes) })
