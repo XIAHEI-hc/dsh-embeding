@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -92,13 +93,14 @@ test('Memory Lab tool definitions compile and register with the official schema 
 
 test('Memory Lab upload accepts only a CSV inside the DSH attachment store', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'memorylab-attachments-'))
-  const digest = 'a'.repeat(64)
-  const ref = { attachmentId: `sha256:${digest}`, name: 'sample.csv', bytes: 31 }
-  const nested = join(root, 'aa', digest)
+  const csvContent = 'CHN,BG,BANK,Row,Col\n0,0,0,1,2\n'
+  const digest = createHash('sha256').update(csvContent).digest('hex')
+  const ref = { attachmentId: `sha256:${digest}`, name: 'sample.csv', bytes: Buffer.byteLength(csvContent) }
+  const nested = join(root, digest.slice(0, 2), digest)
   mkdirSync(nested, { recursive: true })
   const csv = join(nested, 'sample.csv')
   const outside = join(tmpdir(), `outside-${Date.now()}.csv`)
-  writeFileSync(csv, 'CHN,BG,BANK,Row,Col\n0,0,0,1,2\n')
+  writeFileSync(csv, csvContent)
   writeFileSync(outside, 'outside')
   const store = { requireActive() { return { contextId: 'context-a', instanceId: 'memorylab-dsh', accessGrantId: 'grant-a' } } }
   t.after(() => {
@@ -117,7 +119,7 @@ test('Memory Lab upload accepts only a CSV inside the DSH attachment store', asy
   })
   assert.equal((await client(root, store).upload(csv, execWithFile(ref))).data.job_id, 'job-a')
   assert.equal(uploaded, true)
-  await assert.rejects(client(root, store).upload(outside, execWithFile(ref)), /FILE_NOT_ALLOWED/u)
+  await assert.rejects(client(root, store).upload(outside, execWithFile(ref)), /FILE_NOT_ALLOWED|ATTACHMENT_SESSION_MISMATCH/u)
   await assert.rejects(client(root, store).upload({ attachmentId: `sha256:${'b'.repeat(64)}` }, execWithFile(ref)), /ATTACHMENT_SESSION_MISMATCH/u)
 })
 

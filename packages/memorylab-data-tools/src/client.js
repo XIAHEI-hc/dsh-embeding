@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto'
-import { mkdirSync, openAsBlob, readFileSync, realpathSync, statSync } from 'node:fs'
+import { createHash, randomUUID } from 'node:crypto'
+import { mkdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { basename, extname, resolve, sep } from 'node:path'
 import { IntegrationStore, integrationStatePath } from '../../workbench-extensions/src/integration-store.js'
 
@@ -144,6 +144,7 @@ export class MemoryLabToolClient {
       throw new Error('ATTACHMENT_REFERENCE_REQUIRED: provide exactly one attachment_id or file_path')
     }
     let candidate
+    let selectedRef
     if (attachmentId !== undefined) {
       if (typeof attachmentId !== 'string' || !FILE_ATTACHMENT_ID.test(attachmentId)) {
         throw new Error('ATTACHMENT_ID_INVALID: attachment_id must be a canonical file reference')
@@ -152,7 +153,8 @@ export class MemoryLabToolClient {
       if (!refs.has(attachmentId)) {
         throw new Error('ATTACHMENT_SESSION_MISMATCH: attachment is not present in the current DSH session')
       }
-      candidate = this.filePathForRef(refs.get(attachmentId))
+      selectedRef = refs.get(attachmentId)
+      candidate = this.filePathForRef(selectedRef)
       if (candidate === undefined) throw new Error('ATTACHMENT_REFERENCE_INVALID: missing file name')
     } else {
       if (typeof filePath !== 'string' || filePath.length === 0) throw new Error('FILE_PATH_INVALID')
@@ -172,16 +174,32 @@ export class MemoryLabToolClient {
     if (!allowedPaths.has(actual)) {
       throw new Error('ATTACHMENT_SESSION_MISMATCH: file is not present in the current DSH session')
     }
+    if (selectedRef === undefined) {
+      for (const ref of refs.values()) {
+        const path = this.filePathForRef(ref)
+        if (path === undefined) continue
+        try {
+          if (realpathSync(path) === actual) { selectedRef = ref; break }
+        } catch { /* missing attachment is rejected below */ }
+      }
+    }
+    if (selectedRef === undefined) throw new Error('ATTACHMENT_REFERENCE_INVALID: missing session reference')
     if (extname(actual).toLowerCase() !== '.csv') throw new Error('FILE_TYPE_UNSUPPORTED: Memory Lab requires a CSV file')
     const info = statSync(actual)
     if (!info.isFile() || info.size === 0 || info.size > this.maxUploadBytes) {
       throw new Error('FILE_SIZE_INVALID: CSV is empty or exceeds the configured upload limit')
     }
+    const bytes = readFileSync(actual)
+    const digest = createHash('sha256').update(bytes).digest('hex')
+    const expected = String(selectedRef.attachmentId).replace(/^sha256:/u, '')
+    if (digest !== expected || bytes.byteLength !== selectedRef.bytes) {
+      throw new Error('ATTACHMENT_HASH_MISMATCH: attachment bytes do not match the session reference')
+    }
     const form = new FormData()
     form.set('request_id', randomUUID())
     form.set('context_id', binding.contextId)
     form.set('session_id', sessionId)
-    form.set('file', await openAsBlob(actual, { type: 'text/csv' }), basename(actual))
+    form.set('file', new Blob([bytes], { type: 'text/csv' }), basename(actual))
     const timer = this.signal(exec)
     try {
       const response = await fetch(`${this.origin}/api/ai/tool-upload`, {
