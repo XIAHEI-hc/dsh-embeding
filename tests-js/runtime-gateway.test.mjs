@@ -64,9 +64,15 @@ test('gateway performs a live Memory Lab lease check before forwarding native re
   const previous = process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN
   process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN = 'http://memorylab.test'
   let allowed = true
+  let scopeMatches = true
   const gateway = createRuntimeGateway({
     registryPath, scopeSecret: 'scope-secret', serviceSecret: 'service-secret',
-    fetchImpl: async () => new Response(JSON.stringify({ ok: allowed }), { status: allowed ? 200 : 403 }),
+    fetchImpl: async () => new Response(JSON.stringify({
+      ok: allowed,
+      ...(scopeMatches ? { scope: { context_id: 'ctx-a', session_id: 'session-a', access_grant_id: 'grant-a', dsh_instance_id: 'instance-a' } } : {
+        scope: { context_id: 'ctx-other', session_id: 'session-other', access_grant_id: 'grant-other', dsh_instance_id: 'instance-a' },
+      }),
+    }), { status: allowed ? 200 : 403 }),
   })
   await new Promise(resolve => gateway.server.listen(0, '127.0.0.1', resolve))
   const address = gateway.server.address()
@@ -85,6 +91,9 @@ test('gateway performs a live Memory Lab lease check before forwarding native re
   assert.equal(forwardedHeaders['x-dsh-access-grant-id'], 'grant-a')
   const proofBody = JSON.stringify({ subject: 'user-a', runtime_id: 'runner-a', context_id: 'ctx-a', session_id: 'session-a', access_grant_id: 'grant-a' })
   assert.equal(forwardedHeaders['x-dsh-scope-proof'], createHmac('sha256', 'runner-secret').update(proofBody).digest('base64url'))
+  scopeMatches = false
+  const mismatched = await fetch(`${base}/api/native`, { headers: { cookie } })
+  assert.equal(mismatched.status, 403)
   allowed = false
   const revoked = await fetch(`${base}/api/native`, { headers: { cookie } })
   assert.equal(revoked.status, 403)
@@ -110,7 +119,9 @@ test('gateway preserves the Connection: Upgrade header for native WebSocket clie
   process.env.MEMORYLAB_RUNTIME_VERIFY_ORIGIN = 'http://memorylab.test'
   const gateway = createRuntimeGateway({
     registryPath, scopeSecret: 'scope-secret', serviceSecret: 'service-secret',
-    fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    fetchImpl: async () => new Response(JSON.stringify({ ok: true, scope: {
+      context_id: 'ctx-a', session_id: 'session-a', access_grant_id: 'grant-a', dsh_instance_id: 'instance-a',
+    } }), { status: 200 }),
   })
   await new Promise(resolve => gateway.server.listen(0, '127.0.0.1', resolve))
   const address = gateway.server.address()

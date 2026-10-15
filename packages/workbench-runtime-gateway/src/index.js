@@ -85,7 +85,13 @@ async function verifyLiveScope(scope, runtime, verifyOrigin, hostInstanceId, tim
       signal: controller.signal,
     })
     const body = await response.json().catch(() => undefined)
-    return response.ok && body?.ok === true ? { ok: true } : { ok: false, error: 'SCOPE_DENIED' }
+    const verified = body?.scope
+    const exactScope = verified?.context_id === scope.context_id
+      && verified?.session_id === scope.session_id
+      && verified?.access_grant_id === scope.access_grant_id
+      && verified?.dsh_instance_id === hostInstanceId
+    return response.ok && body?.ok === true && exactScope
+      ? { ok: true } : { ok: false, error: 'SCOPE_DENIED' }
   } catch {
     return { ok: false, error: 'RUNTIME_UNAVAILABLE' }
   } finally {
