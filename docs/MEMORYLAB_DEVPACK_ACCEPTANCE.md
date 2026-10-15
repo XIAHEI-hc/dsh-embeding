@@ -279,6 +279,22 @@ $env:ACCEPTANCE_USER_B_PASSWORD = '<provided-out-of-band>'
 python scripts/acceptance_native_scope.py
 ```
 
+### Unified live probe runner
+
+Run all five live probes with one machine-readable result:
+
+```powershell
+$env:ACCEPTANCE_USER_A_PASSWORD = '<provided-out-of-band>'
+$env:ACCEPTANCE_USER_B_PASSWORD = '<provided-out-of-band>'
+python scripts/acceptance_matrix.py
+```
+
+The runner executes A/B bootstrap, native scope, WebSocket revoke, Skill
+lifecycle, and restart recovery in that order. It returns `PASS` only when all
+probes pass, `BLOCKED` when formal credentials are missing, and `FAIL` for a
+probe assertion, timeout, or infrastructure error. It preserves each probe's
+machine-readable payload and never prints inherited environment values.
+
 The probe has been syntax-checked but is not counted as PASS until run against
 the current live A/B accounts. It does not create users, reset passwords, or
 alter volumes.
