@@ -17,6 +17,12 @@ The generated `runtime-secrets.json` is the Memory Lab control-plane mapping for
 backend environment through the deployment secret manager. The runner credential
 files must never be replaced with the shared `AI_TOOL_SERVICE_SECRET`.
 
+For a real model deployment, give each runner its own read-only model secret
+file and set `DEEPSEEK_API_KEY_FILE` in that runner's env file. The launcher
+loads the value only into that runner's child DSH process; it is never exposed
+through the iframe, workspace files, browser state, logs, or the gateway. Do
+not put a shared model key in the checked-in env templates.
+
 The gateway must also receive `MEMORYLAB_RUNTIME_VERIFY_ORIGIN`, pointing to the
 private backend service (for example `http://memorylab-api:9000`). It uses the
 runtime credential and exact `context_id/session_id/access_grant_id` from the
