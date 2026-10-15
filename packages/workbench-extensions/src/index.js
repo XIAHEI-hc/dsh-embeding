@@ -609,7 +609,18 @@ export async function apply(ctx) {
             && item.locator.version_id === candidate.locator.version_id
             && item.locator.generation === candidate.locator.generation
             && item.locator.archive_sha256 === candidate.locator.archive_sha256)
-          if (index < 0) throw new WorkbenchExtensionError('CONTEXT_REVOKED', { message: '技能提交没有有效 admission receipt' })
+          if (index < 0) {
+            // A catalog refresh can expose a newer locator while an older
+            // admitted prompt is still waiting for pre-step. Consume that
+            // stale receipt and write its terminal fact; otherwise it would
+            // remain admitted forever and be retried against the wrong
+            // version after a switch, disable, or revoke.
+            const stale = queuedIndex < 0 ? undefined : queue.splice(queuedIndex, 1)[0]
+            if (queue.length === 0) admittedPrompts.delete(payload.agent.session.id)
+            else admittedPrompts.set(payload.agent.session.id, queue)
+            await settleQueued(stale, 'failed', 'SKILL_VERSION_CHANGED')
+            throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
+          }
           const admitted = queue.splice(index, 1)[0]
           if (queue.length === 0) admittedPrompts.delete(payload.agent.session.id)
           else admittedPrompts.set(payload.agent.session.id, queue)
