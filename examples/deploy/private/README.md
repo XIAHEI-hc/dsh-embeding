@@ -23,6 +23,10 @@ loads the value only into that runner's child DSH process; it is never exposed
 through the iframe, workspace files, browser state, logs, or the gateway. Do
 not put a shared model key in the checked-in env templates.
 
+When generating private material, `DEEPSEEK_API_KEY_FILE_A` and
+`DEEPSEEK_API_KEY_FILE_B` can be set to the corresponding container paths; the
+bootstrap script writes those paths only into the matching runner env file.
+
 The gateway must also receive `MEMORYLAB_RUNTIME_VERIFY_ORIGIN`, pointing to the
 private backend service (for example `http://memorylab-api:9000`). It uses the
 runtime credential and exact `context_id/session_id/access_grant_id` from the

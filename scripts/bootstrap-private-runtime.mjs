@@ -11,6 +11,10 @@ const apiOrigin = process.env.MEMORYLAB_API_ORIGIN ?? 'http://memorylab-api:9000
 // pass the public portal origin explicitly (usually the shared HTTPS origin).
 const parentOrigin = process.env.MEMORYLAB_PARENT_ORIGIN ?? 'http://localhost:7891'
 const publicOrigin = process.env.MEMORYLAB_DSH_PUBLIC_ORIGIN ?? 'http://localhost:8875'
+const modelKeyFile = {
+  'runner-a': process.env.DEEPSEEK_API_KEY_FILE_A ?? '',
+  'runner-b': process.env.DEEPSEEK_API_KEY_FILE_B ?? '',
+}
 
 function secret() { return randomBytes(32).toString('base64url') }
 async function put(path, value, mode = 0o600) {
@@ -63,7 +67,7 @@ for (const [name, runtime] of [['runner-a', 'runner-a'], ['runner-b', 'runner-b'
   await put(`${name}/runner-client-secret`, runnerSecret)
   await put(`${name}/workspace.json`, workspaceConfig(), 0o644)
   await put(`${name}/embed.json`, embedConfig(), 0o644)
-  await put(`${name}.env`, [
+  const runnerEnv = [
     'WORKBENCH_ROLE=runner',
     'WORKBENCH_INTEGRATION_MODE=embedded_multi_user',
     'WORKBENCH_EMBED_ENABLED=true',
@@ -82,7 +86,9 @@ for (const [name, runtime] of [['runner-a', 'runner-a'], ['runner-b', 'runner-b'
     'WORKBENCH_EMBED_CONFIG=/private/embed.json',
     'DSH_PERMISSION_MODE=danger-full-access',
     `DSH_RUNTIME_ID=${runtime}`,
-  ].join('\n'))
+  ]
+  if (modelKeyFile[runtime].trim()) runnerEnv.push(`DEEPSEEK_API_KEY_FILE=${modelKeyFile[runtime].trim()}`)
+  await put(`${name}.env`, runnerEnv.join('\n'))
 }
 await put('runtime-secrets.json', JSON.stringify(runtimeSecrets, null, 2), 0o600)
 console.log(JSON.stringify({ root, users: { a: userA, b: userB }, api_origin: apiOrigin, generated: true }, null, 2))
