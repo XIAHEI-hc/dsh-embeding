@@ -75,6 +75,14 @@ Observed with real HTTP sessions after rebuilding both compose projects:
 - the runtime registry subjects exactly matched the database user IDs;
 - no placeholder subject is accepted by `scripts/bootstrap-private-runtime.mjs`.
 
+The local Chromium browser also completed both real local login flows. The A
+workbench rendered the official DSH iframe under `Acceptance-A`; a separate
+browser tab rendered a different session tree and the official DSH iframe under
+`Acceptance-B`. The B tab did not inherit A's Memory Lab identity or browser
+scope. The official model configuration overlay was visible because no model
+secret has been supplied, so this browser evidence intentionally stops before a
+turn is sent.
+
 This is stronger than the previous single mock-principal smoke, but it is still
 an HTTP/runtime isolation check. It does not by itself prove the browser's full
 cross-user RPC/WS/file/fork matrix or a real model turn.
