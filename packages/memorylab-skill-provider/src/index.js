@@ -127,7 +127,13 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
         const candidate = { name: row.runtime_name, description: `${row.display_name} · v${row.version} · Memory Lab：${row.description}`, source: 'memorylab', provider: PROVIDER, rank: 600, invocation: { userInvocable: true, modelInvocable: false }, locator: { activation_id: row.activation_id, version_id: row.version_id, generation: row.generation, archive_sha256: row.archive_sha256, owner: captured.context_id }, metadata: { display_name: row.display_name, version: row.version } }
         next.set(candidate.name, candidate)
       }
-      if (JSON.stringify([...next.keys()]) !== JSON.stringify([...installed.keys()])) control?.invalidate?.()
+      const fingerprint = (value) => JSON.stringify([...value.values()].map(candidate => ({
+        name: candidate.name,
+        description: candidate.description,
+        locator: candidate.locator,
+        metadata: candidate.metadata,
+      })))
+      if (fingerprint(next) !== fingerprint(installed)) control?.invalidate?.()
       installed = next
       return [...installed.values()]
     },

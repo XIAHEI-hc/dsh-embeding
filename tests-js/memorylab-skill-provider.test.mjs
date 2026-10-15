@@ -28,6 +28,31 @@ test('provider rejects candidates from another scope', async () => {
   await assert.rejects(provider.get({ provider: 'memorylab-remote', locator: { owner: 'ctx-b' } }), { code: 'SCOPE_DENIED' })
 })
 
+test('provider invalidates native cache when fixed locator generation changes', async () => {
+  let generation = 1
+  let invalidations = 0
+  const fetchImpl = async (url) => ({
+    ok: true,
+    async json() {
+      if (url.endsWith('/catalog')) return { items: [{
+        desired_enabled: true, ack_status: 'installed', runtime_name: 'ml-skill-v1-0-0-habc',
+        display_name: 'Skill', version: '1.0.0', description: 'desc', activation_id: 'a',
+        version_id: 'v', generation, archive_sha256: 'a'.repeat(64),
+      }] }
+      return {}
+    },
+  })
+  const provider = createRemoteProvider({
+    baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a',
+    scope, fetchImpl, control: { invalidate() { invalidations += 1 } },
+  })
+  await provider.list()
+  await provider.list()
+  generation = 2
+  await provider.list()
+  assert.equal(invalidations, 2)
+})
+
 test('provider rejects malformed locators before contacting the broker', async () => {
   let requests = 0
   const provider = createRemoteProvider({
