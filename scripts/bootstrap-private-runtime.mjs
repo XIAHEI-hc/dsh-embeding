@@ -79,6 +79,9 @@ await put('gateway.env', [
   'WORKBENCH_RUNTIME_REGISTRY=/private/runtime-registry.json',
   `WORKBENCH_SCOPE_COOKIE_SECRET=${scopeSecret}`,
   `WORKBENCH_GATEWAY_SERVICE_SECRET=${gatewayServiceSecret}`,
+  `MEMORYLAB_RUNTIME_VERIFY_ORIGIN=${apiOrigin}`,
+  'MEMORYLAB_RUNTIME_VERIFY_TIMEOUT_MS=5000',
+  'MEMORYLAB_RUNTIME_LIVE_CHECK_INTERVAL_MS=5000',
 ].join('\n'))
 const runtimeSecrets = {}
 for (const [name, runtime] of [['runner-a', 'runner-a'], ['runner-b', 'runner-b']]) {
