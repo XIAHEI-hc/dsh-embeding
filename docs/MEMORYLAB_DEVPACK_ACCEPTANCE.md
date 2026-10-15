@@ -75,6 +75,11 @@ Observed with real HTTP sessions after rebuilding both compose projects:
 - the runtime registry subjects exactly matched the database user IDs;
 - no placeholder subject is accepted by `scripts/bootstrap-private-runtime.mjs`.
 
+The Memory Lab API also returned A's private `runtime-probe-35a513fa79` skill to
+A and HTTP 404 to B, while B's own activation projection was an empty list.
+That verifies the server-side owner filter rather than a frontend-only list
+filter.
+
 The local Chromium browser also completed both real local login flows. The A
 workbench rendered the official DSH iframe under `Acceptance-A`; a separate
 browser tab rendered a different session tree and the official DSH iframe under
