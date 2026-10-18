@@ -307,13 +307,14 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
     try {
       const client = findClient(req)
       const body = await readJson(req)
-      exactKeys(body, ['context_id', 'workspace_id', 'session_id', 'parent_session_id', 'access_grant_id', 'request_id'])
+      exactKeys(body, ['context_id', 'workspace_id', 'session_id', 'parent_session_id', 'access_grant_id', 'request_id', 'page_surface'])
       const contextId = oneString(body.context_id, 'context_id')
       const workspaceId = oneString(body.workspace_id, 'workspace_id')
       const sessionId = oneString(body.session_id, 'session_id')
       const parentSessionId = body.parent_session_id === undefined
         ? undefined
         : oneString(body.parent_session_id, 'parent_session_id')
+      const pageSurface = normalizePageSurface(body.page_surface)
       oneString(body.request_id, 'request_id', 128)
       const accessGrantId = oneString(body.access_grant_id, 'access_grant_id', 36)
       const workspace = await policy.requireWritable(await policy.checkWorkspaceId(workspaceId))
@@ -322,7 +323,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
       }
       const metadata = await verifyContext(config, contextId, undefined, runtimeRegistry, accessGrantId)
       await requireBindableSession(
-        ctx, policy, workspaceId, sessionId, contextId, client.clientId, store, parentSessionId,
+        ctx, policy, workspaceId, sessionId, contextId, client.clientId, store, parentSessionId, pageSurface,
       )
       await rebindOnlyAfterGrantRevocation(store, config, client.clientId, sessionId, accessGrantId)
       const binding = store.bind({
@@ -332,6 +333,7 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
         sessionId,
         instanceId: config.instanceId,
         metadata,
+        pageSurface,
       })
       writeJson(res, 200, {
         context_id: binding.contextId,
