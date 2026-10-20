@@ -7,7 +7,7 @@
     "protocol": { "const": "dsh.embed" },
     "version": { "const": "1.0" },
     "type": {
-      "enum": ["ready", "init", "initialized", "session.opened", "session.lifecycle", "connection.changed", "error"]
+      "enum": ["ready", "init", "initialized", "session.opened", "session.lifecycle", "connection.changed", "draft_prompt", "draft_prompt.result", "selected_skills", "sync_skills", "skills.synced", "error"]
     },
     "channel_id": { "type": "string", "minLength": 1, "maxLength": 256 },
     "request_id": { "type": "string", "minLength": 1, "maxLength": 256 },
@@ -114,6 +114,80 @@
           }
         }
       }
+    },
+    {
+      "if": { "properties": { "type": { "const": "draft_prompt" } }, "required": ["type"] },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "prompt": { "type": "string", "maxLength": 8000 },
+              "command_id": { "type": "string", "minLength": 1, "maxLength": 256 }
+            },
+            "required": ["prompt", "command_id"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "draft_prompt.result" } }, "required": ["type"] },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "command_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "applied": { "type": "boolean" },
+              "reason": { "enum": ["session_unavailable", "draft_not_empty"] }
+            },
+            "required": ["command_id", "applied"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "selected_skills" } }, "required": ["type"] },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "properties": {
+              "skills": {
+                "type": "array",
+                "maxItems": 5,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+                    "runtime_name": { "type": "string", "pattern": "^ml-[a-z0-9-]+$", "maxLength": 200 }
+                  },
+                  "required": ["name", "runtime_name"],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": ["skills"],
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "type": { "const": "sync_skills" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "type": "object", "properties": {
+        "command_id": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }, "required": ["command_id"], "additionalProperties": false } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "skills.synced" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "type": "object", "properties": {
+        "command_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "runtime_names": { "type": "array", "items": { "type": "string", "pattern": "^ml-[a-z0-9-]+$", "maxLength": 200 } },
+        "error": { "type": "string", "maxLength": 128 }
+      }, "required": ["command_id", "runtime_names"], "additionalProperties": false } } }
     },
     {
       "if": { "properties": { "type": { "const": "error" } }, "required": ["type"] },

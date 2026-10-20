@@ -35,7 +35,7 @@ services:
         source: ./private/runner-a
         target: /private
         read_only: true
-    networks: [dsh-internal]
+    networks: [dsh-internal, memorylab-internal]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped
@@ -49,7 +49,7 @@ services:
         source: ./private/runner-b
         target: /private
         read_only: true
-    networks: [dsh-internal]
+    networks: [dsh-internal, memorylab-internal]
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     restart: unless-stopped

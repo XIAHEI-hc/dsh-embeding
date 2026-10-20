@@ -13,3 +13,9 @@ test('embed contract declares the session lifecycle event emitted by the client'
   assert.deepEqual(branch.then.properties.payload.properties.action.enum,
     ['forked', 'deleted', 'archived', 'unarchived'])
 })
+
+test('embed contract declares the skill selection notice and immediate sync messages', () => {
+  assert.ok(schema.properties.type.enum.includes('selected_skills'))
+  assert.ok(schema.properties.type.enum.includes('sync_skills'))
+  assert.ok(schema.properties.type.enum.includes('skills.synced'))
+})

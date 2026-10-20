@@ -118,6 +118,117 @@ window.__ModuleLoader__.load({
 			state.prompt_applied = true;
 			save(state);
 		}
+		function installDraftBridge(ctx, state) {
+			if (state.draft_bridge_installed) return;
+			state.draft_bridge_installed = true;
+			let skillNotice;
+			const showSkillNotice = (skills) => {
+				if (!Array.isArray(skills) || skills.length > 5 || skills.some(skill =>
+					typeof skill?.name !== "string" || skill.name.length === 0 || skill.name.length > 160
+					|| typeof skill.runtime_name !== "string" || !/^ml-[a-z0-9-]{1,196}$/u.test(skill.runtime_name))) return;
+				if (skills.length === 0) { skillNotice?.remove(); skillNotice = undefined; return; }
+				if (skillNotice === undefined) {
+					skillNotice = document.createElement("div");
+					skillNotice.setAttribute("role", "status");
+					skillNotice.setAttribute("aria-live", "polite");
+					const row = document.createElement("span");
+					row.className = "dsh-selected-skills-row";
+					Object.assign(row.style, { display: "flex", alignItems: "center", justifyContent: "center", flexWrap: "wrap", gap: "7px", minWidth: "0" });
+					skillNotice.append(row);
+					Object.assign(skillNotice.style, {
+						position: "fixed", top: "64px", left: "50%", transform: "translateX(-50%)",
+						zIndex: "1000", maxWidth: "min(560px, calc(100vw - 32px))", padding: "7px 11px",
+						border: "1px solid #d8e4f1", borderRadius: "6px", color: "#285b99",
+						background: "#f2f7fe", boxShadow: "0 3px 12px rgba(30, 68, 112, .12)",
+						font: "600 12px/1.4 system-ui, sans-serif", pointerEvents: "none",
+					});
+					document.body.append(skillNotice);
+				}
+				const row = skillNotice.querySelector(".dsh-selected-skills-row");
+				row.replaceChildren();
+				const prefix = document.createElement("span");
+				prefix.textContent = skills.length > 1 ? `组合 Skills · ${skills.length}` : "已选择";
+				prefix.style.cssText = "color:#718096;font-size:11px;white-space:nowrap";
+				row.append(prefix);
+				if (skills.length > 1) {
+					const stack = document.createElement("span");
+					stack.className = "dsh-selected-skills-stack";
+					stack.setAttribute("aria-label", `${skills.length} 个 Skills 组合`);
+					Object.assign(stack.style, { display: "inline-flex", alignItems: "center", paddingLeft: "3px" });
+					for (const [index, skill] of skills.slice(0, 5).entries()) {
+						const icon = document.createElement("span");
+						icon.className = "dsh-selected-skills-icon";
+						icon.setAttribute("aria-hidden", "true");
+						icon.textContent = skill.runtime_name.includes("analysis") ? "⌕"
+							: skill.runtime_name.includes("summary") || skill.runtime_name.includes("report") ? "▤"
+								: skill.runtime_name.includes("knowledge") ? "◈" : "✦";
+						Object.assign(icon.style, {
+							display: "grid", placeItems: "center", width: "22px", height: "22px", marginLeft: index ? "-6px" : "0",
+							border: "2px solid #f2f7fe", borderRadius: "50%", color: index % 2 ? "#397a68" : "#3981d8",
+							background: "#fff", boxShadow: "0 1px 3px rgba(30, 68, 112, .16)", font: "700 12px/1 system-ui, sans-serif",
+						});
+						stack.append(icon);
+					}
+					row.append(stack);
+				}
+				for (const skill of skills) {
+					const chip = document.createElement("span");
+					Object.assign(chip.style, { display: "inline-flex", alignItems: "center", gap: "5px", maxWidth: "220px", minWidth: "0", padding: "3px 7px", border: "1px solid #d8e4f1", borderRadius: "5px", background: "#fff" });
+					const label = document.createElement("span");
+					label.textContent = skill.name;
+					label.style.cssText = "overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+					chip.append(label);
+					row.append(chip);
+				}
+			};
+			const listener = (event) => {
+				const message = event.data;
+				if (event.source !== window.parent || event.origin !== state.parent_origin
+					|| message?.protocol !== PROTOCOL || message.version !== VERSION
+					|| !["draft_prompt", "selected_skills", "sync_skills"].includes(message.type)
+					|| message.channel_id !== state.channel_id || message.request_id !== state.request_id) return;
+				if (message.type === "sync_skills") {
+					const sessionId = state.session_id;
+					if (typeof sessionId !== "string" || typeof message.payload?.command_id !== "string") return;
+					void fetch("/embed/control/skills/sync", {
+						method: "POST", credentials: "same-origin",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify({ session_id: sessionId }),
+					}).then(async response => {
+						const result = await response.json().catch(() => ({}));
+						if (!response.ok) throw new Error(result.error?.code || result.code || "SKILL_SYNC_FAILED");
+						send(state, "skills.synced", { command_id: message.payload.command_id,
+							runtime_names: Array.isArray(result.runtime_names) ? result.runtime_names : [] });
+					}).catch(error => send(state, "skills.synced", {
+						command_id: message.payload.command_id, runtime_names: [], error: String(error?.message || "SKILL_SYNC_FAILED").slice(0, 128),
+					}));
+					return;
+				}
+				if (message.type === "selected_skills") {
+					showSkillNotice(message.payload?.skills);
+					return;
+				}
+				if (typeof message.payload?.prompt !== "string") return;
+				if (message.payload.prompt.length > 8000
+					|| typeof message.payload.command_id !== "string") return;
+				let applied = false;
+				let reason;
+				try {
+					const sessionId = state.session_id;
+					const binding = typeof sessionId === "string" ? ctx.sessions.binding(sessionId) : undefined;
+					if (binding === undefined) reason = "session_unavailable";
+					else {
+						const input = ctx.conversation.input.for(binding.ctx);
+						const draft = input.state.getSnapshot().draft;
+						if (draft !== "" && !/^\/ml-[a-z0-9-]+(?:\s+\/ml-[a-z0-9-]+)*(?:\s|$)/u.test(draft)) reason = "draft_not_empty";
+						else { input.setDraft(message.payload.prompt); applied = true; }
+					}
+				} catch { reason = "session_unavailable"; }
+				send(state, "draft_prompt.result", { command_id: message.payload.command_id, applied, ...(reason ? { reason } : {}) });
+			};
+			window.addEventListener("message", listener);
+			state.draft_bridge_dispose = () => window.removeEventListener("message", listener);
+		}
 		function waitForWorkspace(ctx, workspaceId, timeoutMs = 15000) {
 			const present = () => ctx.workspaces.list.getSnapshot().items
 				.find((item) => item.workspaceId === workspaceId);
@@ -266,6 +377,7 @@ window.__ModuleLoader__.load({
 			const state = loadState();
 			if (state === undefined) return;
 			installPageBridge(ctx, state);
+			installDraftBridge(ctx, state);
 			const disposeFreshSessions = forceFreshNativeSessions(ctx);
 			ctx.effect(() => disposeFreshSessions, "workbench embed fresh native sessions");
 			const connection = () => {

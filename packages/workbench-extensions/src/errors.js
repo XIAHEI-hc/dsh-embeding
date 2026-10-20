@@ -32,7 +32,7 @@ export const ERROR_DEFINITIONS = Object.freeze({
   RUNTIME_NOT_PROVISIONED: [409, true, 'retry', '当前用户的 DSH 运行端尚未准备'],
   SKILL_NOT_ENABLED: [403, false, 'select_skill', '该 Memory Lab 技能当前未获准使用'],
   SKILL_VERSION_CHANGED: [409, false, 'select_skill', '该技能版本已停用或发生变化，请重新选择'],
-  SKILL_MULTIPLE: [422, false, 'split_prompt', '一次提交最多只能使用一个 Memory Lab 技能'],
+  SKILL_MULTIPLE: [422, false, 'reduce_skills', '一次回答最多组合 5 个 Memory Lab 技能'],
   SKILL_PROVIDER_UNAVAILABLE: [503, true, 'retry', 'Memory Lab 技能服务暂不可用'],
 })
 

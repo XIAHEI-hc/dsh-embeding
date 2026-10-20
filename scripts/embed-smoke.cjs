@@ -7,6 +7,14 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+async function assertEventually(check, message, timeoutMs = 5000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await delay(50);
+  }
+  assert.fail(message);
+}
 const data = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-embed-smoke-'));
 const project = path.join(data, 'project');
 let dshPort;
@@ -241,6 +249,39 @@ const parent = http.createServer(async (req, res) => {
   assert.equal((await iframe.locator('body').innerText()).includes(initialPrompt.repeat(2)), false);
   await iframe.getByRole('button', { name: /^(发送消息|Send message)$/u }).click();
   await iframe.getByText(initialPrompt, { exact: true }).waitFor({ timeout: 30000 });
+  const dynamicPrompt = '/ml-draft-bridge-test ';
+  await page.evaluate(prompt => {
+    const frame = document.getElementById('frame');
+    frame.contentWindow.postMessage({ protocol: 'dsh.embed', version: '1.0', type: 'draft_prompt',
+      channel_id: new URL(frame.src).searchParams.get('channel_id'), request_id: 'iframe-init-1',
+      payload: { prompt, command_id: 'dynamic-draft-1' } }, new URL(frame.src).origin);
+  }, dynamicPrompt);
+  await assertEventually(async () => (await editor.innerText()).trim() === dynamicPrompt.trim(), 'dynamic prompt should update the current draft');
+  await assertEventually(async () => (await page.evaluate(() => window.embedEvents)).some(event =>
+    event.type === 'draft_prompt.result' && event.payload.command_id === 'dynamic-draft-1' && event.payload.applied === true),
+  'dynamic prompt should be acknowledged');
+  await page.evaluate(() => {
+    const frame = document.getElementById('frame');
+    frame.contentWindow.postMessage({ protocol: 'dsh.embed', version: '1.0', type: 'selected_skills',
+      channel_id: new URL(frame.src).searchParams.get('channel_id'), request_id: 'iframe-init-1',
+      payload: { skills: [{ name: 'CHN 分析摘要', runtime_name: 'ml-chn-analysis-v1-0-0-habc' }, { name: '知识条目整理助手', runtime_name: 'ml-knowledge-cleanup-assistant-v0-9-0-h03c69c545e6c' }] } }, new URL(frame.src).origin);
+  });
+  await assertEventually(async () => {
+    const notices = await iframe.getByRole('status').allInnerTexts();
+    return notices.some(text => text.includes('组合 Skills') && text.includes('2') && text.includes('⌕') && text.includes('◈') && text.includes('CHN 分析摘要') && text.includes('知识条目整理助手'));
+  }, 'selected skills notice should show multiple icons and human-readable names', 3000);
+  await editor.fill('keep my existing draft');
+  await page.evaluate(() => {
+    const frame = document.getElementById('frame');
+    frame.contentWindow.postMessage({ protocol: 'dsh.embed', version: '1.0', type: 'draft_prompt',
+      channel_id: new URL(frame.src).searchParams.get('channel_id'), request_id: 'iframe-init-1',
+      payload: { prompt: '/ml-must-not-overwrite ', command_id: 'dynamic-draft-2' } }, new URL(frame.src).origin);
+  });
+  await assertEventually(async () => (await page.evaluate(() => window.embedEvents)).some(event =>
+    event.type === 'draft_prompt.result' && event.payload.command_id === 'dynamic-draft-2' && event.payload.reason === 'draft_not_empty'),
+  'dynamic prompt should preserve manually entered text');
+  assert.equal(await editor.innerText(), 'keep my existing draft');
+  await editor.fill('');
   if (process.env.DSH_SCREENSHOT_DIR) {
     fs.mkdirSync(process.env.DSH_SCREENSHOT_DIR, { recursive: true });
     await page.screenshot({ path: path.join(process.env.DSH_SCREENSHOT_DIR, 'embed-ready.png'), fullPage: true });
@@ -256,7 +297,7 @@ const parent = http.createServer(async (req, res) => {
   assert.equal(restoredSessionId, initialSessionId, 'iframe reload must restore the same non-blank session');
   assert.deepEqual(browserErrors, []);
   await embedContext.close();
-  console.log('PASS embed: config, official workspace, one-use ticket, cookie, iframe protocol, connection, draft-only prompt, same-session reload');
+  console.log('PASS embed: config, official workspace, one-use ticket, cookie, iframe protocol, connection, initial and dynamic draft-only prompts, same-session reload');
 })().catch(async error => {
   console.error(error.stack || error.message);
   if (smokePage && !smokePage.isClosed()) {

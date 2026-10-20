@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import {
   embedEnabled,
   loadEmbedConfig,
@@ -73,22 +73,44 @@ function sameProviderBinding(left, right) {
 async function admitRemotePrompt(integration, config, request, admittedPrompts, getProvider) {
   const names = remoteSkillNames(request.content)
   if (names.length === 0) return
-  if (names.length > 1) throw new WorkbenchExtensionError('SKILL_MULTIPLE')
+  if (names.length > 5) throw new WorkbenchExtensionError('SKILL_MULTIPLE')
   const { binding, scope } = providerScope(integration, request.sessionId)
   const controller = new AbortController()
   const provider = getProvider(request.sessionId, controller.signal)
   try {
-    const candidate = (await provider.list({ signal: controller.signal })).find(item => item.name === names[0])
-    if (candidate === undefined) throw new WorkbenchExtensionError('SKILL_NOT_ENABLED')
-    await admitInvocation({
-      baseUrl: config.apiOrigin, serviceSecret: config.toolSecret, instanceId: config.instanceId,
-      runtimeId: binding.runtimeId, scope, locator: candidate.locator,
-      invocationId: request.requestId, nativeRequestId: request.requestId, signal: controller.signal,
-    })
-    enqueueAdmittedPrompt(admittedPrompts, request.sessionId, {
-      invocationId: request.requestId, nativeRequestId: request.requestId,
-      skillName: names[0], locator: candidate.locator,
-    })
+    const candidates = await provider.list({ signal: controller.signal })
+    const selected = names.map(name => candidates.find(item => item.name === name))
+    if (selected.some(candidate => candidate === undefined)) throw new WorkbenchExtensionError('SKILL_NOT_ENABLED')
+    const candidatesToAdmit = selected
+    if (selected.length > 1) {
+      if (typeof provider.setInvocationBundle !== 'function') throw new WorkbenchExtensionError('SKILL_PROVIDER_UNAVAILABLE')
+      provider.setInvocationBundle(selected)
+      let replaced = false
+      request.content = request.content.map(part => {
+        if (part?.type !== 'text' || typeof part.text !== 'string') return part
+        const text = part.text.replace(/(^|\s)\/(ml-[a-z0-9]+(?:-[a-z0-9]+)*)\b/gu, (match, prefix, name) => {
+          if (!names.includes(name)) return match
+          if (replaced) return prefix
+          replaced = true
+          return `${prefix}/ml-selected-skills`
+        })
+        return { ...part, text }
+      })
+    } else provider.setInvocationBundle?.([])
+    for (const candidate of candidatesToAdmit) {
+      const idempotencyId = createHash('sha256')
+        .update(`${request.requestId}\u0000${candidate.locator.activation_id}`)
+        .digest('hex')
+      await admitInvocation({
+        baseUrl: config.apiOrigin, serviceSecret: config.toolSecret, instanceId: config.instanceId,
+        runtimeId: binding.runtimeId, scope, locator: candidate.locator,
+        invocationId: idempotencyId, nativeRequestId: idempotencyId, signal: controller.signal,
+      })
+      enqueueAdmittedPrompt(admittedPrompts, request.sessionId, {
+        invocationId: idempotencyId, nativeRequestId: idempotencyId,
+        skillName: selected.length > 1 ? 'ml-selected-skills' : candidate.name, locator: candidate.locator,
+      })
+    }
   } catch (error) {
     if (error instanceof WorkbenchExtensionError) throw error
     if (error?.code === 'SKILL_NOT_ENABLED' || error?.code === 'SKILL_VERSION_CHANGED') {
@@ -276,6 +298,26 @@ function registerRoutes(ctx, config, policy, store, integration, runtimeRegistry
       const body = await readJson(req)
       const revoked = store.revoke(oneString(body.ticket, 'ticket', 4096), client.clientId, id)
       writeJson(res, 200, { revoked, request_id: id })
+    } catch (error) { writeError(res, error, id) }
+  }))
+
+  disposers.push(route('/embed/control/skills/sync', async (req, res) => {
+    const id = requestId(req)
+    if (!method(req, res, ['POST'])) return
+    try {
+      verifyAuthenticated(ctx.connection, req)
+      if (integration === undefined || integrationConfig.integrationKind !== 'memorylab') {
+        throw new WorkbenchExtensionError('SKILL_PROVIDER_UNAVAILABLE')
+      }
+      const body = await readJson(req)
+      const sessionId = oneString(body.session_id, 'session_id')
+      const binding = integration.store.requireActive(sessionId)
+      const result = await synchronizeRemoteProvider({
+        baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
+        instanceId: integrationConfig.instanceId, runtimeId: binding.runtimeId,
+        scope: { context_id: binding.contextId, session_id: binding.sessionId, access_grant_id: binding.accessGrantId },
+      })
+      writeJson(res, 200, { synced: true, runtime_names: result.installed.map(item => item.runtime_name), request_id: id })
     } catch (error) { writeError(res, error, id) }
   }))
 
@@ -522,7 +564,10 @@ export async function apply(ctx) {
     // the provider in the agent's scope and prevents a per-session provider
     // from becoming global.
     const fiber = agent.ctx.inject(['skills'], (skillsCtx) => {
-      skillsCtx.skills.registerProvider(() => installed.provider)
+      skillsCtx.skills.registerProvider(skillControl => {
+        installed.provider.setControl?.(skillControl)
+        return installed.provider
+      })
       registeredProviders.add(agent)
     })
     providerRegistrationFibers.set(agent, fiber)
@@ -632,62 +677,56 @@ export async function apply(ctx) {
     ctx.on('agent/pre-step', async (payload, next) => {
       try {
         const names = remoteSkillNames(payload.messages.flatMap(message => message.content ?? []))
-        if (names.length > 1) throw new WorkbenchExtensionError('SKILL_MULTIPLE')
+        if (names.length > 5) throw new WorkbenchExtensionError('SKILL_MULTIPLE')
         if (names.length === 1) {
           const installed = agentProviders.get(payload.agent) ?? ensureRemoteProvider(payload.agent, payload.signal)
           await registerAgentProvider(payload.agent, installed)
           const candidate = (await installed.provider.list({ signal: payload.signal })).find(item => item.name === names[0])
           const queue = admittedPrompts.get(payload.agent.session.id) ?? []
-          const queuedIndex = queue.findIndex(item => item.skillName === names[0])
+          const memberLocators = candidate?.name === 'ml-selected-skills'
+            ? candidate.locator.members
+            : candidate ? [candidate.locator] : []
+          const queuedIndexes = memberLocators.map(locator => queue.findIndex(item =>
+            item.locator.activation_id === locator.activation_id
+            && item.locator.version_id === locator.version_id
+            && item.locator.generation === locator.generation
+            && item.locator.archive_sha256 === locator.archive_sha256))
           const settleQueued = async (queued, phase, errorCode) => {
             if (queued === undefined) return
-          await recordUsageDurably(integration, integrationConfig, {
-            runtimeId: installed.binding.runtimeId, scope: installed.scope,
-            locator: queued.locator, invocationId: queued.invocationId,
-            nativeRequestId: queued.nativeRequestId, phase, errorCode,
-          }, { signal: payload.signal })
+            await recordUsageDurably(integration, integrationConfig, {
+              runtimeId: installed.binding.runtimeId, scope: installed.scope,
+              locator: queued.locator, invocationId: queued.invocationId,
+              nativeRequestId: queued.nativeRequestId, phase, errorCode,
+            }, { signal: payload.signal })
           }
-          if (candidate === undefined) {
-            const queued = queuedIndex < 0 ? undefined : queue.splice(queuedIndex, 1)[0]
+          if (candidate === undefined || memberLocators.length === 0 || queuedIndexes.some(index => index < 0)) {
+            const queued = queue.filter(item => item.skillName === names[0])
+            for (const item of queued) queue.splice(queue.indexOf(item), 1)
             if (queue.length === 0) admittedPrompts.delete(payload.agent.session.id)
             else admittedPrompts.set(payload.agent.session.id, queue)
-            await settleQueued(queued, 'failed', 'SKILL_VERSION_CHANGED')
+            for (const item of queued) await settleQueued(item, 'failed', 'SKILL_VERSION_CHANGED')
             throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
           }
-          const index = queue.findIndex(item => item.locator.activation_id === candidate.locator.activation_id
-            && item.locator.version_id === candidate.locator.version_id
-            && item.locator.generation === candidate.locator.generation
-            && item.locator.archive_sha256 === candidate.locator.archive_sha256)
-          if (index < 0) {
-            // A catalog refresh can expose a newer locator while an older
-            // admitted prompt is still waiting for pre-step. Consume that
-            // stale receipt and write its terminal fact; otherwise it would
-            // remain admitted forever and be retried against the wrong
-            // version after a switch, disable, or revoke.
-            const stale = queuedIndex < 0 ? undefined : queue.splice(queuedIndex, 1)[0]
-            if (queue.length === 0) admittedPrompts.delete(payload.agent.session.id)
-            else admittedPrompts.set(payload.agent.session.id, queue)
-            await settleQueued(stale, 'failed', 'SKILL_VERSION_CHANGED')
-            throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
-          }
-          const admitted = queue.splice(index, 1)[0]
+          const admitted = queuedIndexes.map(index => queue[index])
+          const indexesDescending = [...queuedIndexes].sort((a, b) => b - a)
+          for (const index of indexesDescending) queue.splice(index, 1)
           if (queue.length === 0) admittedPrompts.delete(payload.agent.session.id)
           else admittedPrompts.set(payload.agent.session.id, queue)
           try {
             const definition = await installed.provider.get(candidate, { signal: payload.signal })
             if (definition === undefined) throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED')
-            await recordUsageDurably(integration, integrationConfig, {
+            for (const item of admitted) await recordUsageDurably(integration, integrationConfig, {
               runtimeId: installed.binding.runtimeId, scope: installed.scope,
-              locator: candidate.locator, invocationId: admitted.invocationId,
-              nativeRequestId: admitted.nativeRequestId, phase: 'loaded',
+              locator: item.locator, invocationId: item.invocationId,
+              nativeRequestId: item.nativeRequestId, phase: 'loaded',
             }, { signal: payload.signal, required: true })
           } catch (error) {
             const cancelled = error?.name === 'AbortError' || error?.code === 'ABORT_ERR'
-            await settleQueued(admitted, cancelled ? 'cancelled' : 'failed', error?.code ?? 'SKILL_LOAD_FAILED')
+            for (const item of admitted) await settleQueued(item, cancelled ? 'cancelled' : 'failed', error?.code ?? 'SKILL_LOAD_FAILED')
             throw error
           }
           const invocations = agentInvocations.get(payload.agent) ?? []
-          invocations.push({ locator: candidate.locator, invocationId: admitted.invocationId, nativeRequestId: admitted.nativeRequestId })
+          invocations.push(...admitted.map(item => ({ locator: item.locator, invocationId: item.invocationId, nativeRequestId: item.nativeRequestId })))
           agentInvocations.set(payload.agent, invocations)
         }
         return next()

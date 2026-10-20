@@ -126,7 +126,7 @@ curl -sS 'https://dsh.example.test/embed/health/ready'
 }
 ```
 
-父页面实现见 `examples/host-integration/parent-bridge.js`。它严格核对 `event.origin`、`event.source`、协议、版本、channel 和 request ID。iframe URL 只包含非敏感 channel ID；ticket 通过 `postMessage` 发送。初始 prompt 可以放在 `init.payload.initial_prompt`，但只会填入官方输入框草稿，绝不自动发送。
+父页面实现见 `examples/host-integration/parent-bridge.js`。它严格核对 `event.origin`、`event.source`、协议、版本、channel 和 request ID。iframe URL 只包含非敏感 channel ID；ticket 通过 `postMessage` 发送。初始 prompt 可以放在 `init.payload.initial_prompt`，也可以在初始化后通过 `draft_prompt` 消息更新输入草稿；两种方式都只填入官方输入框，绝不自动发送。DSH 只接受来自已授权父 origin、当前 channel/request 的草稿更新，并在输入框为空或已有 Memory Lab `/ml-...` 命令时覆盖。
 
 ## 升级 ZIP
 
@@ -148,7 +148,7 @@ EzProber 的业务上下文绑定、Host-only 控制接口、数据库工具配�
 - `trusted_shared_account` 没有每用户全通道 ACL；多用户模式使用每用户私有 runner，并覆盖已支持的 HTTP/RPC/WebSocket/native owner 边界。
 - 多用户模式的隔离粒度是 runner、`DSH_HOME` 和数据卷；没有每 session 独立容器。
 - 仅同站点 iframe；跨站点按设计拒绝。
-- 嵌入消息包括 `ready`、`initialized`、`session.opened`、`session.lifecycle`、`connection.changed`、`error`；`session.lifecycle` 只报告授权 workspace 内的 fork/delete/archive/unarchive，没有 `task.changed` 或 `artifact.created`。
+- 嵌入消息包括 `ready`、`initialized`、`session.opened`、`session.lifecycle`、`connection.changed`、`draft_prompt.result`、`error`；`session.lifecycle` 只报告授权 workspace 内的 fork/delete/archive/unarchive，没有 `task.changed` 或 `artifact.created`。
 - 工作区级 `preview_only` 阻止执行，不代表提供专用只读文件浏览 UI；客户端级 `preview_only` 在共享账户模式下按配置错误拒绝。
 - 浏览器禁用 Cookie、CSP/DNS/证书错误时会失败，父页应提供可见错误和独立打开入口。
 - 测试夹具不证明真实付费模型、外网、证书链或业务数据权限正确。

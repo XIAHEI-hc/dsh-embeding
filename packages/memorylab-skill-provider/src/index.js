@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 
 const PROVIDER = 'memorylab-remote'
+const BUNDLE_NAME = 'ml-selected-skills'
 const RUNTIME_PATH = '/api/skills/runtime/v1'
 
 function runtimeUrl(baseUrl, path) {
@@ -77,7 +78,7 @@ export async function synchronizeRemoteProvider({ baseUrl, serviceSecret, instan
     const locator = { activation_id: row.activation_id, version_id: row.version_id, generation: row.generation, archive_sha256: row.archive_sha256 }
     const status = row.desired_enabled ? 'installed' : 'removed'
     if (row.desired_enabled) {
-      const resolved = await protocolRequest({ baseUrl, serviceSecret, instanceId, runtimeId, scope, path: '/resolve', body: locator, fetchImpl, signal })
+      const resolved = await protocolRequest({ baseUrl, serviceSecret, instanceId, runtimeId, scope, path: '/sync/resolve', body: locator, fetchImpl, signal })
       if (resolved.archive_sha256 !== row.archive_sha256
         || resolved.runtime_name !== row.runtime_name
         || resolved.activation_id !== row.activation_id
@@ -116,6 +117,32 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
     return payload
   }
   let installed = new Map()
+  let invocationBundle = []
+  let providerControl = control
+  const resolveCandidate = async (candidate, options) => {
+    const locator = validateLocator(candidate.locator, captured)
+    const result = await request('/resolve', locator, options.signal)
+    if (result.runtime_name !== (candidate.locator.runtime_name ?? candidate.name)
+      || result.activation_id !== candidate.locator.activation_id
+      || result.version_id !== candidate.locator.version_id
+      || result.generation !== candidate.locator.generation
+      || result.archive_sha256 !== candidate.locator.archive_sha256) {
+      const error = new Error('skill version changed'); error.code = 'SKILL_VERSION_CHANGED'; throw error
+    }
+    if (typeof result.instruction !== 'string' || typeof result.instruction_sha256 !== 'string'
+      || createHash('sha256').update(result.instruction, 'utf8').digest('hex') !== result.instruction_sha256) {
+      const error = new Error('resolved instruction hash mismatch'); error.code = 'HASH_MISMATCH'; throw error
+    }
+    return { candidate, result }
+  }
+  const bundleCandidate = () => invocationBundle.length < 2 ? undefined : ({
+    name: BUNDLE_NAME,
+    description: `Memory Lab 组合技能：${invocationBundle.map(candidate => candidate.metadata.display_name).join('、')}`,
+    source: 'memorylab', provider: PROVIDER, rank: 900,
+    invocation: { userInvocable: true, modelInvocable: false },
+    locator: { owner: captured.context_id, members: invocationBundle.map(candidate => candidate.locator) },
+    metadata: { display_name: invocationBundle.map(candidate => candidate.metadata.display_name).join('、'), members: invocationBundle.map(candidate => candidate.name) },
+  })
   const provider = {
     name: PROVIDER,
     async list(options = {}) {
@@ -124,7 +151,10 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
       const next = new Map()
       for (const row of result.items ?? []) {
         if (!row.desired_enabled || row.ack_status !== 'installed') continue
-        const candidate = { name: row.runtime_name, description: `${row.display_name} · v${row.version} · Memory Lab：${row.description}`, source: 'memorylab', provider: PROVIDER, rank: 600, invocation: { userInvocable: true, modelInvocable: false }, locator: { activation_id: row.activation_id, version_id: row.version_id, generation: row.generation, archive_sha256: row.archive_sha256, owner: captured.context_id }, metadata: { display_name: row.display_name, version: row.version } }
+        const commandName = typeof row.slug === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(row.slug)
+          ? `ml-${row.slug}`
+          : row.runtime_name
+        const candidate = { name: commandName, description: `${row.display_name} · v${row.version} · Memory Lab：${row.description}`, source: 'memorylab', provider: PROVIDER, rank: 600, invocation: { userInvocable: true, modelInvocable: false }, locator: { activation_id: row.activation_id, version_id: row.version_id, generation: row.generation, archive_sha256: row.archive_sha256, runtime_name: row.runtime_name, owner: captured.context_id }, metadata: { display_name: row.display_name, version: row.version } }
         next.set(candidate.name, candidate)
       }
       const fingerprint = (value) => JSON.stringify([...value.values()]
@@ -135,26 +165,48 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
           metadata: candidate.metadata,
         }))
         .sort((left, right) => left.name.localeCompare(right.name)))
-      if (fingerprint(next) !== fingerprint(installed)) control?.invalidate?.()
+      if (fingerprint(next) !== fingerprint(installed)) providerControl?.invalidate?.()
       installed = next
-      return [...installed.values()]
+      const bundle = bundleCandidate()
+      return [...installed.values(), ...(bundle ? [bundle] : [])]
     },
+    setInvocationBundle(candidates) {
+      if (!Array.isArray(candidates) || candidates.length > 5
+        || candidates.some(candidate => installed.get(candidate.name) !== candidate)) {
+        const error = new Error('selected skill bundle is invalid'); error.code = 'SKILL_BUNDLE_INVALID'; throw error
+      }
+      invocationBundle = [...candidates]
+      providerControl?.invalidate?.()
+      return bundleCandidate()
+    },
+    setControl(value) { providerControl = value },
     async get(candidate, options = {}) {
       abortIfNeeded(options.signal)
       if (candidate?.provider !== PROVIDER) { const error = new Error('candidate scope denied'); error.code = 'SCOPE_DENIED'; throw error }
-      const locator = validateLocator(candidate.locator, captured)
-      const result = await request('/resolve', locator, options.signal)
-      if (result.runtime_name !== candidate.name
-        || result.activation_id !== candidate.locator.activation_id
-        || result.version_id !== candidate.locator.version_id
-        || result.generation !== candidate.locator.generation
-        || result.archive_sha256 !== candidate.locator.archive_sha256) {
-        const error = new Error('skill version changed'); error.code = 'SKILL_VERSION_CHANGED'; throw error
+      if (candidate.name === BUNDLE_NAME) {
+        const members = candidate.locator?.members
+        if (!Array.isArray(members) || members.length < 2 || members.length > 5
+          || members.some(member => !invocationBundle.some(selected => selected.locator.activation_id === member.activation_id
+            && selected.locator.version_id === member.version_id && selected.locator.generation === member.generation
+            && selected.locator.archive_sha256 === member.archive_sha256))) {
+          const error = new Error('selected skill bundle changed'); error.code = 'SKILL_VERSION_CHANGED'; throw error
+        }
+        const loaded = []
+        for (const member of members) {
+          const selected = invocationBundle.find(item => item.locator.activation_id === member.activation_id
+            && item.locator.version_id === member.version_id && item.locator.generation === member.generation
+            && item.locator.archive_sha256 === member.archive_sha256)
+          if (!selected) { const error = new Error('selected skill version changed'); error.code = 'SKILL_VERSION_CHANGED'; throw error }
+          loaded.push(await resolveCandidate(selected, options))
+        }
+        const content = loaded.map(({ candidate: item, result }) =>
+          `## ${item.metadata.display_name} (v${item.metadata.version})\n\n${result.instruction}`).join('\n\n---\n\n')
+        return { name: candidate.name, description: candidate.description, source: 'memorylab', provider: PROVIDER,
+          invocation: { userInvocable: true, modelInvocable: false }, content,
+          resourceBase: { kind: 'opaque', description: '静态资源通过已授权 Memory Lab broker 提供。' },
+          metadata: { display_name: candidate.metadata.display_name, members: loaded.map(({ result }) => result.instruction_sha256) } }
       }
-      if (typeof result.instruction !== 'string' || typeof result.instruction_sha256 !== 'string'
-        || createHash('sha256').update(result.instruction, 'utf8').digest('hex') !== result.instruction_sha256) {
-        const error = new Error('resolved instruction hash mismatch'); error.code = 'HASH_MISMATCH'; throw error
-      }
+      const { result } = await resolveCandidate(candidate, options)
       abortIfNeeded(options.signal)
       return { name: candidate.name, description: candidate.description, source: 'memorylab', provider: PROVIDER, invocation: { userInvocable: true, modelInvocable: false }, content: result.instruction, resourceBase: { kind: 'opaque', description: '静态资源通过已授权 Memory Lab broker 提供。' }, metadata: { ...candidate.metadata, instruction_sha256: result.instruction_sha256, archive_sha256: result.archive_sha256 } }
     },

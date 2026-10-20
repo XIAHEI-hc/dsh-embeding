@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import test from 'node:test'
 import { admitInvocation, createRemoteProvider, recordUsage, synchronizeRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
 
@@ -9,18 +10,46 @@ test('provider only exposes installed fixed versions and resolves through broker
   const fetchImpl = async (url, options) => {
     calls.push({ url, body: JSON.parse(options.body), headers: options.headers })
     return { ok: true, async json() { return url.endsWith('/catalog') ? { items: [
-      { desired_enabled: true, ack_status: 'installed', runtime_name: 'ml-chn-v1-0-0-habc', display_name: 'CHN', version: '1.0.0', description: 'facts', activation_id: 'a', version_id: 'v', generation: 2, archive_sha256: 'a'.repeat(64) },
+      { desired_enabled: true, ack_status: 'installed', runtime_name: 'ml-knowledge-cleanup-assistant-v1-0-0-habc', slug: 'knowledge-cleanup-assistant', display_name: '知识条目整理助手', version: '1.0.0', description: 'facts', activation_id: 'a', version_id: 'v', generation: 2, archive_sha256: 'a'.repeat(64) },
       { desired_enabled: true, ack_status: 'pending', runtime_name: 'ml-pending-v1-0-0-hdef', display_name: 'Pending', version: '1.0.0', description: '', activation_id: 'p', version_id: 'pv', generation: 1, archive_sha256: 'b'.repeat(64) },
-    ] } : { runtime_name: 'ml-chn-v1-0-0-habc', activation_id: 'a', version_id: 'v', generation: 2, archive_sha256: 'a'.repeat(64), instruction: 'Use facts.', instruction_sha256: '0b51f6cda8a51221bb6084d84fb271fb069e848ffe5306a8cb96f38054ebd5cd' } } }
+    ] } : { runtime_name: 'ml-knowledge-cleanup-assistant-v1-0-0-habc', activation_id: 'a', version_id: 'v', generation: 2, archive_sha256: 'a'.repeat(64), instruction: 'Use facts.', instruction_sha256: '0b51f6cda8a51221bb6084d84fb271fb069e848ffe5306a8cb96f38054ebd5cd' } } }
   }
   const provider = createRemoteProvider({ baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope, fetchImpl })
   const [candidate] = await provider.list()
-  assert.equal(candidate.name, 'ml-chn-v1-0-0-habc')
+  assert.equal(candidate.name, 'ml-knowledge-cleanup-assistant')
+  assert.equal(candidate.locator.runtime_name, 'ml-knowledge-cleanup-assistant-v1-0-0-habc')
   const definition = await provider.get(candidate)
   assert.equal(definition.content, 'Use facts.')
   assert.equal(calls[0].body.context_id, 'ctx-a')
   assert.equal(calls[1].body.archive_sha256, 'a'.repeat(64))
   assert.equal(calls[0].headers['x-dsh-runtime-id'], 'runner-a')
+})
+
+test('provider loads a selected bundle while preserving each fixed version identity', async () => {
+  const resolved = []
+  const rows = [
+    { activation_id: 'a1', version_id: 'v1', runtime_name: 'ml-cleanup-v1-0-0-haaa', slug: 'cleanup', display_name: '知识整理', version: '1.0.0', description: 'clean', generation: 2, archive_sha256: 'a'.repeat(64) },
+    { activation_id: 'a2', version_id: 'v2', runtime_name: 'ml-report-v2-0-0-hbbb', slug: 'report', display_name: '报告大纲', version: '2.0.0', description: 'report', generation: 3, archive_sha256: 'b'.repeat(64) },
+  ]
+  const provider = createRemoteProvider({
+    baseUrl: 'http://memorylab', serviceSecret: 'secret', instanceId: 'instance-a', runtimeId: 'runner-a', scope,
+    fetchImpl: async (url, options) => {
+      const body = JSON.parse(options.body)
+      if (url.endsWith('/catalog')) return { ok: true, json: async () => ({ items: rows.map(row => ({ ...row, desired_enabled: true, ack_status: 'installed' })) }) }
+      resolved.push(body.activation_id)
+      const row = rows.find(item => item.activation_id === body.activation_id)
+      const instruction = `Follow ${row.display_name}.`
+      return { ok: true, json: async () => ({ ...row, instruction, instruction_sha256: createHash('sha256').update(instruction).digest('hex') }) }
+    },
+  })
+  const candidates = await provider.list()
+  provider.setInvocationBundle(candidates)
+  const bundle = (await provider.list()).find(candidate => candidate.name === 'ml-selected-skills')
+  const definition = await provider.get(bundle)
+  assert.equal(definition.name, 'ml-selected-skills')
+  assert.match(definition.content, /知识整理/u)
+  assert.match(definition.content, /报告大纲/u)
+  assert.deepEqual(resolved, ['a1', 'a2'])
 })
 
 test('provider rejects candidates from another scope', async () => {
@@ -156,7 +185,7 @@ test('synchronizer acknowledges only a self-checked fixed version', async () => 
     const body = JSON.parse(options.body); calls.push({ url, body })
     return { ok: true, json: async () => url.endsWith('/catalog')
       ? { catalog_revision: 'rev-1', items: [{ desired_enabled: true, runtime_name: 'ml-chn-v1-0-0-habc', activation_id: 'a', version_id: 'v', generation: 3, archive_sha256: 'a'.repeat(64) }] }
-      : url.endsWith('/resolve')
+      : url.endsWith('/sync/resolve')
         ? { runtime_name: 'ml-chn-v1-0-0-habc', activation_id: 'a', version_id: 'v', generation: 3, archive_sha256: 'a'.repeat(64), instruction: 'Use facts.', instruction_sha256: '0b51f6cda8a51221bb6084d84fb271fb069e848ffe5306a8cb96f38054ebd5cd' }
         : { accepted: true, duplicate: false } }
   }
@@ -164,7 +193,7 @@ test('synchronizer acknowledges only a self-checked fixed version', async () => 
   assert.equal(result.revision, 'rev-1')
   assert.deepEqual(calls.map(call => call.url), [
     'http://memorylab/api/skills/runtime/v1/catalog',
-    'http://memorylab/api/skills/runtime/v1/resolve',
+    'http://memorylab/api/skills/runtime/v1/sync/resolve',
     'http://memorylab/api/skills/runtime/v1/ack',
   ])
   assert.equal(calls[2].body.status, 'installed')
