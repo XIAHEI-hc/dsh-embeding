@@ -98,6 +98,17 @@ def initialize_runner_workspace(workspace, seed=None, role='standalone'):
         raise RuntimeError(f'runner seed directory 不存在: {seed}')
     if any(workspace.iterdir()):
         return False
+    # A deployment directory is not a workspace seed. Fail before copying any
+    # bytes: the native files API and model tools can read workspace contents.
+    # Preserve populated workspaces above; never silently delete user files.
+    control_names = {'runtime-secrets.json', 'runtime-registry.json'}
+    for item in seed.rglob('*'):
+        name = item.name.lower()
+        if (name == '.env' or name.endswith(('.env', '.pem', '.key'))
+                or name.startswith('.env.') or name in control_names):
+            raise RuntimeError('runner seed contains deployment credentials/configuration; use a dedicated seed directory')
+        if item.is_symlink() and not item.resolve().is_relative_to(seed.resolve()):
+            raise RuntimeError('runner seed contains a symlink outside its directory')
     shutil.copytree(seed, workspace, dirs_exist_ok=True, symlinks=True)
     return True
 

@@ -372,10 +372,54 @@ window.__ModuleLoader__.load({
 			}
 			return () => { for (const dispose of disposers) dispose(); };
 		}
-		const inject = ["connection", "sessions", "workspaces", "uiWorkspace", "conversation"];
+		function installPixlabLayout(ctx, state) {
+			if (state.ui_profile !== "pixlab-workbench") return;
+			document.documentElement.dataset.dshUiProfile = "pixlab-workbench";
+			const style = document.createElement("style");
+			style.textContent = `
+html[data-dsh-ui-profile="pixlab-workbench"] [data-conversation-content] {
+  --dsh-chat-user-width: min(calc(100% - 48px), 1040px);
+  --dsh-composer-card-max-width: min(calc(100% - 32px), 1072px);
+}
+html[data-dsh-ui-profile="pixlab-workbench"] [data-content-phase="hero"] [data-conversation-scroll] {
+  justify-content: flex-start; padding-top: clamp(32px, 10vh, 104px);
+}
+html[data-dsh-ui-profile="pixlab-workbench"] [data-content-phase="hero"] [data-composer-seat] {
+  width: min(100%, 1120px); align-self: center;
+}
+html[data-dsh-ui-profile="pixlab-workbench"] [data-content-phase="hero"] [data-composer-input] {
+  min-height: 88px; font-size: 15px; line-height: 1.6;
+}
+@media (max-height: 600px) {
+  html[data-dsh-ui-profile="pixlab-workbench"] [data-content-phase="hero"] [data-conversation-scroll] { padding-top: 20px; }
+}`;
+			document.head.append(style);
+			// Set the native wide-screen preference once; leave subsequent user toggles alone.
+			let initializedWide = false;
+			const collapseInitialSidebar = () => {
+				const frame = document.querySelector("[data-rightbar-collapsed]");
+				if (initializedWide || !frame || frame.clientWidth < 1024
+					|| frame.hasAttribute("data-sidebar-collapsed")) return;
+				initializedWide = true;
+				ctx.layout.toggleSidebar();
+			};
+			// A narrow frame is already collapsed; wait for its native wide render before toggling.
+			const observer = new MutationObserver(collapseInitialSidebar);
+			observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["data-sidebar-collapsed", "data-rightbar-collapsed"] });
+			window.addEventListener("resize", collapseInitialSidebar);
+			collapseInitialSidebar();
+			ctx.effect(() => () => {
+				observer.disconnect();
+				window.removeEventListener("resize", collapseInitialSidebar);
+				style.remove();
+				delete document.documentElement.dataset.dshUiProfile;
+			}, "PixLab embedded layout");
+		}
+		const inject = ["connection", "sessions", "workspaces", "uiWorkspace", "conversation", "layout"];
 		function apply(ctx) {
 			const state = loadState();
 			if (state === undefined) return;
+			installPixlabLayout(ctx, state);
 			installPageBridge(ctx, state);
 			installDraftBridge(ctx, state);
 			const disposeFreshSessions = forceFreshNativeSessions(ctx);

@@ -7,6 +7,7 @@ import {
 } from './integration-store.js'
 import { runtimeForSubject } from './runtime-registry.js'
 import { normalizePageSurface } from './page-surface.js'
+import { supportsRemoteSkills } from './config.js'
 
 function oneString(value, label, max = 256) {
   if (typeof value !== 'string' || value.length === 0 || value.length > max) {
@@ -26,7 +27,7 @@ export async function verifyContext(config, contextId, signal, runtimeRegistry, 
   // reach the upstream verifier without carrying the exact browser grant;
   // otherwise the upstream may be asked to infer identity from a mutable
   // session association after login rotation.
-  if (config.integrationKind === 'memorylab' && accessGrantId === undefined) {
+  if (supportsRemoteSkills(config) && accessGrantId === undefined) {
     throw new WorkbenchExtensionError('CONTEXT_REVOKED')
   }
   const controller = new AbortController()
@@ -51,13 +52,13 @@ export async function verifyContext(config, contextId, signal, runtimeRegistry, 
       }
       throw new WorkbenchExtensionError('INTEGRATION_UPSTREAM_UNAVAILABLE')
     }
-    const scopeIdentity = config.integrationKind === 'memorylab'
+    const scopeIdentity = supportsRemoteSkills(config)
       ? body.context.user_id
       : body.context.project_id
     if (body.context.dsh_instance_id !== config.instanceId
       || !config.allowedFunctionTypes.includes(body.context.function_type)
       || typeof scopeIdentity !== 'string'
-      || (config.integrationKind === 'memorylab' && body.context.access_grant_id !== accessGrantId)) {
+      || (supportsRemoteSkills(config) && body.context.access_grant_id !== accessGrantId)) {
       throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH')
     }
     if (runtimeRegistry !== undefined) {
@@ -80,8 +81,8 @@ export async function verifyContext(config, contextId, signal, runtimeRegistry, 
   }
 }
 
-export async function verifySessionContext(config, contextId, sessionId, accessGrantId, signal) {
-  if (config.integrationKind === 'memorylab'
+export async function verifySessionContext(config, contextId, sessionId, accessGrantId, signal, runtimeId = config.runtimeId) {
+  if (supportsRemoteSkills(config)
     && (typeof accessGrantId !== 'string' || accessGrantId.length === 0)) {
     throw new WorkbenchExtensionError('CONTEXT_REVOKED')
   }
@@ -95,7 +96,7 @@ export async function verifySessionContext(config, contextId, sessionId, accessG
         authorization: `Bearer ${config.toolSecret}`,
         'x-dsh-instance-id': config.instanceId,
         'x-dsh-access-grant-id': accessGrantId,
-        ...(config.runtimeId === undefined ? {} : { 'x-dsh-runtime-id': config.runtimeId }),
+        ...(runtimeId === undefined ? {} : { 'x-dsh-runtime-id': runtimeId }),
       },
       method: 'GET',
       signal: combined,
@@ -103,7 +104,8 @@ export async function verifySessionContext(config, contextId, sessionId, accessG
     const body = await response.json().catch(() => undefined)
     if (!response.ok || body?.ok !== true || body.scope?.context_id !== contextId
       || body.scope?.session_id !== sessionId || body.scope?.access_grant_id !== accessGrantId
-      || body.scope?.dsh_instance_id !== config.instanceId) {
+      || body.scope?.dsh_instance_id !== config.instanceId
+      || (runtimeId !== undefined && body.scope?.runtime_id !== runtimeId)) {
       if (response.status === 401 || response.status === 403 || body?.error?.code === 'CONTEXT_REVOKED') {
         throw new WorkbenchExtensionError('CONTEXT_REVOKED')
       }
@@ -117,14 +119,14 @@ export async function verifySessionContext(config, contextId, sessionId, accessG
 }
 
 async function rebindOnlyAfterGrantRevocation(store, config, clientId, sessionId, accessGrantId) {
-  if (config.integrationKind !== 'memorylab' || accessGrantId === undefined) return
+  if (!supportsRemoteSkills(config) || accessGrantId === undefined) return
   const existing = store.binding(sessionId)
   if (existing === undefined || existing.clientId !== clientId
     || existing.accessGrantId === undefined || existing.accessGrantId === accessGrantId
     || existing.status !== 'active') return
   let oldGrantStillValid = false
   try {
-    await verifySessionContext(config, existing.contextId, sessionId, existing.accessGrantId)
+    await verifySessionContext(config, existing.contextId, sessionId, existing.accessGrantId, undefined, existing.runtimeId)
     oldGrantStillValid = true
   } catch (error) {
     if (error?.code !== 'CONTEXT_REVOKED') throw error
@@ -164,8 +166,19 @@ async function remoteForkRequest(config, path, body, signal) {
 }
 
 export async function associateRemoteFork(config, request, signal) {
-  if (config.integrationKind !== 'memorylab') return undefined
+  if (!supportsRemoteSkills(config)) return undefined
   return remoteForkRequest(config, '/api/ai/runtime-session-associations', {
+    protocol_version: '1.0', request_id: request.requestId,
+    context_id: request.contextId, session_id: request.childSessionId,
+    parent_session_id: request.sourceSessionId, workspace_id: request.workspaceId,
+    access_grant_id: request.accessGrantId, runtime_id: request.runtimeId,
+    ...(request.pageSurface === undefined ? {} : { page_surface: request.pageSurface }),
+  }, signal)
+}
+
+export async function rollbackRemoteFork(config, request, signal) {
+  if (!supportsRemoteSkills(config)) return undefined
+  return remoteForkRequest(config, '/api/ai/runtime-session-associations/rollback', {
     protocol_version: '1.0', request_id: request.requestId,
     context_id: request.contextId, session_id: request.childSessionId,
     parent_session_id: request.sourceSessionId, workspace_id: request.workspaceId,
@@ -173,13 +186,14 @@ export async function associateRemoteFork(config, request, signal) {
   }, signal)
 }
 
-export async function rollbackRemoteFork(config, request, signal) {
-  if (config.integrationKind !== 'memorylab') return undefined
-  return remoteForkRequest(config, '/api/ai/runtime-session-associations/rollback', {
+export async function associateRemoteSession(config, request, signal) {
+  if (!supportsRemoteSkills(config)) return undefined
+  return remoteForkRequest(config, '/api/ai/runtime-session-associations', {
     protocol_version: '1.0', request_id: request.requestId,
-    context_id: request.contextId, session_id: request.childSessionId,
-    parent_session_id: request.sourceSessionId, workspace_id: request.workspaceId,
-    access_grant_id: request.accessGrantId, runtime_id: request.runtimeId,
+    context_id: request.contextId, session_id: request.sessionId,
+    workspace_id: request.workspaceId, access_grant_id: request.accessGrantId,
+    runtime_id: request.runtimeId,
+    ...(request.pageSurface === undefined ? {} : { page_surface: request.pageSurface }),
   }, signal)
 }
 
@@ -243,7 +257,9 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
       const contextId = oneString(body.context_id, 'context_id')
       const alias = oneString(body.workspace_alias, 'workspace_alias', 128)
       integrationRequestId = oneString(body.request_id, 'request_id', 128)
-      const accessGrantId = oneString(body.access_grant_id, 'access_grant_id', 36)
+      const accessGrantId = body.access_grant_id === undefined && !supportsRemoteSkills(config)
+        ? undefined
+        : oneString(body.access_grant_id, 'access_grant_id', 36)
       const pageSurface = normalizePageSurface(body.page_surface)
       if (!client.workspaceAliases.includes(alias)) throw new WorkbenchExtensionError('EMBED_SCOPE_DENIED')
       const workspace = await policy.requireWritable(await policy.checkAlias(alias, { register: true }))
@@ -277,7 +293,19 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
       await requireBindableSession(
         ctx, policy, workspace.workspace_id, sessionId, contextId, client.clientId, store, undefined, pageSurface,
       )
+      // Check the old authoritative scope before the association callback can
+      // publish the new grant. Reversing these steps makes old-grant verification
+      // fail because of our own write and incorrectly authorizes takeover.
       await rebindOnlyAfterGrantRevocation(store, config, client.clientId, sessionId, accessGrantId)
+      await associateRemoteSession(config, {
+        requestId: integrationRequestId,
+        contextId,
+        sessionId,
+        workspaceId: workspace.workspace_id,
+        accessGrantId,
+        runtimeId: metadata.runtime_id,
+        pageSurface,
+      })
       const result = store.completePrepare({
         clientId: client.clientId,
         requestId: integrationRequestId,
@@ -316,7 +344,9 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
         : oneString(body.parent_session_id, 'parent_session_id')
       const pageSurface = normalizePageSurface(body.page_surface)
       oneString(body.request_id, 'request_id', 128)
-      const accessGrantId = oneString(body.access_grant_id, 'access_grant_id', 36)
+      const accessGrantId = body.access_grant_id === undefined && !supportsRemoteSkills(config)
+        ? undefined
+        : oneString(body.access_grant_id, 'access_grant_id', 36)
       const workspace = await policy.requireWritable(await policy.checkWorkspaceId(workspaceId))
       if (workspace.alias === null || !client.workspaceAliases.includes(workspace.alias)) {
         throw new WorkbenchExtensionError('EMBED_SCOPE_DENIED')
@@ -326,6 +356,15 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
         ctx, policy, workspaceId, sessionId, contextId, client.clientId, store, parentSessionId, pageSurface,
       )
       await rebindOnlyAfterGrantRevocation(store, config, client.clientId, sessionId, accessGrantId)
+      await associateRemoteSession(config, {
+        requestId: body.request_id,
+        contextId,
+        sessionId,
+        workspaceId,
+        accessGrantId,
+        runtimeId: metadata.runtime_id,
+        pageSurface,
+      })
       const binding = store.bind({
         clientId: client.clientId,
         contextId,
@@ -374,9 +413,9 @@ export function registerIntegrationRoutes(ctx, config, policy, findClient, runti
       if (binding === undefined) throw new WorkbenchExtensionError('CONTEXT_NOT_BOUND')
       if (binding.clientId !== client.clientId) throw new WorkbenchExtensionError('EMBED_SCOPE_DENIED')
       policy.requireSession(binding.workspaceId, sessionId)
-      if (config.integrationKind === 'memorylab') {
+      if (supportsRemoteSkills(config)) {
         if (binding.accessGrantId === undefined) throw new WorkbenchExtensionError('CONTEXT_REVOKED')
-        await verifySessionContext(config, binding.contextId, sessionId, binding.accessGrantId)
+        await verifySessionContext(config, binding.contextId, sessionId, binding.accessGrantId, undefined, binding.runtimeId)
       }
       writeJson(res, 200, {
         context_id: binding.contextId,

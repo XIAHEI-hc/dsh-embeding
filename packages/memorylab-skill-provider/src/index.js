@@ -105,8 +105,14 @@ export async function synchronizeRemoteProvider({ baseUrl, serviceSecret, instan
  * A single-session, server-bound provider. The scope is supplied by the trusted
  * host integration; cwd is deliberately ignored as an identity signal.
  */
-export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runtimeId, scope, control, fetchImpl = fetch }) {
+export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runtimeId, scope, control, fetchImpl = fetch, integrationKind = 'memorylab' }) {
   validateScope(scope)
+  const pixlab = integrationKind === 'pixlab'
+  const providerName = pixlab ? 'pixlab-remote' : PROVIDER
+  const bundleName = pixlab ? 'px-selected-skills' : BUNDLE_NAME
+  const source = pixlab ? 'pixlab' : 'memorylab'
+  const commandPrefix = pixlab ? 'px-' : 'ml-'
+  const hostLabel = pixlab ? 'PixLab' : 'Memory Lab'
   const captured = Object.freeze({ ...scope })
   const headers = () => ({ accept: 'application/json', 'content-type': 'application/json', authorization: `Bearer ${serviceSecret}`, 'x-dsh-instance-id': instanceId, 'x-dsh-runtime-id': runtimeId })
   const request = async (path, body, signal) => {
@@ -136,9 +142,9 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
     return { candidate, result }
   }
   const bundleCandidate = () => invocationBundle.length < 2 ? undefined : ({
-    name: BUNDLE_NAME,
-    description: `Memory Lab 组合技能：${invocationBundle.map(candidate => candidate.metadata.display_name).join('、')}`,
-    source: 'memorylab', provider: PROVIDER, rank: 900,
+    name: bundleName,
+    description: `${hostLabel} 组合技能：${invocationBundle.map(candidate => candidate.metadata.display_name).join('、')}`,
+    source, provider: providerName, rank: 900,
     invocation: { userInvocable: true, modelInvocable: false },
     locator: { owner: captured.context_id, members: invocationBundle.map(candidate => candidate.locator) },
     metadata: { display_name: invocationBundle.map(candidate => candidate.metadata.display_name).join('、'), members: invocationBundle.map(candidate => candidate.name) },
@@ -152,9 +158,9 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
       for (const row of result.items ?? []) {
         if (!row.desired_enabled || row.ack_status !== 'installed') continue
         const commandName = typeof row.slug === 'string' && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(row.slug)
-          ? `ml-${row.slug}`
+          ? `${commandPrefix}${row.slug}`
           : row.runtime_name
-        const candidate = { name: commandName, description: `${row.display_name} · v${row.version} · Memory Lab：${row.description}`, source: 'memorylab', provider: PROVIDER, rank: 600, invocation: { userInvocable: true, modelInvocable: false }, locator: { activation_id: row.activation_id, version_id: row.version_id, generation: row.generation, archive_sha256: row.archive_sha256, runtime_name: row.runtime_name, owner: captured.context_id }, metadata: { display_name: row.display_name, version: row.version } }
+        const candidate = { name: commandName, description: `${row.display_name} · v${row.version} · ${hostLabel}：${row.description}`, source, provider: providerName, rank: 600, invocation: { userInvocable: true, modelInvocable: false }, locator: { activation_id: row.activation_id, version_id: row.version_id, generation: row.generation, archive_sha256: row.archive_sha256, runtime_name: row.runtime_name, owner: captured.context_id }, metadata: { display_name: row.display_name, version: row.version } }
         next.set(candidate.name, candidate)
       }
       const fingerprint = (value) => JSON.stringify([...value.values()]
@@ -182,8 +188,8 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
     setControl(value) { providerControl = value },
     async get(candidate, options = {}) {
       abortIfNeeded(options.signal)
-      if (candidate?.provider !== PROVIDER) { const error = new Error('candidate scope denied'); error.code = 'SCOPE_DENIED'; throw error }
-      if (candidate.name === BUNDLE_NAME) {
+      if (candidate?.provider !== providerName) { const error = new Error('candidate scope denied'); error.code = 'SCOPE_DENIED'; throw error }
+      if (candidate.name === bundleName) {
         const members = candidate.locator?.members
         if (!Array.isArray(members) || members.length < 2 || members.length > 5
           || members.some(member => !invocationBundle.some(selected => selected.locator.activation_id === member.activation_id
@@ -201,14 +207,14 @@ export function createRemoteProvider({ baseUrl, serviceSecret, instanceId, runti
         }
         const content = loaded.map(({ candidate: item, result }) =>
           `## ${item.metadata.display_name} (v${item.metadata.version})\n\n${result.instruction}`).join('\n\n---\n\n')
-        return { name: candidate.name, description: candidate.description, source: 'memorylab', provider: PROVIDER,
+        return { name: candidate.name, description: candidate.description, source, provider: providerName,
           invocation: { userInvocable: true, modelInvocable: false }, content,
-          resourceBase: { kind: 'opaque', description: '静态资源通过已授权 Memory Lab broker 提供。' },
+          resourceBase: { kind: 'opaque', description: `静态资源通过已授权 ${hostLabel} broker 提供。` },
           metadata: { display_name: candidate.metadata.display_name, members: loaded.map(({ result }) => result.instruction_sha256) } }
       }
       const { result } = await resolveCandidate(candidate, options)
       abortIfNeeded(options.signal)
-      return { name: candidate.name, description: candidate.description, source: 'memorylab', provider: PROVIDER, invocation: { userInvocable: true, modelInvocable: false }, content: result.instruction, resourceBase: { kind: 'opaque', description: '静态资源通过已授权 Memory Lab broker 提供。' }, metadata: { ...candidate.metadata, instruction_sha256: result.instruction_sha256, archive_sha256: result.archive_sha256 } }
+      return { name: candidate.name, description: candidate.description, source, provider: providerName, invocation: { userInvocable: true, modelInvocable: false }, content: result.instruction, resourceBase: { kind: 'opaque', description: `静态资源通过已授权 ${hostLabel} broker 提供。` }, metadata: { ...candidate.metadata, instruction_sha256: result.instruction_sha256, archive_sha256: result.archive_sha256 } }
     },
   }
   return provider

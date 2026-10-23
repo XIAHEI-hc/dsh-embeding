@@ -1674,6 +1674,10 @@ window.__ModuleLoader__.load({
 			unbindScope() {
 				this.actx = void 0;
 			}
+			/** Await a host snapshot through the official per-session prompt seam. */
+			setPageContextProvider(provider) {
+				this.pageContextProvider = provider;
+			}
 			/**
 			* Register one local submission echo (see the ISession declaration).
 			* Synchronous through markDirty: the echo is in the very next snapshot, so
@@ -1722,12 +1726,17 @@ window.__ModuleLoader__.load({
 				let result;
 				if (this.address === void 0) {
 					const clientTimeZone = resolvedClientTimeZone();
+					const effectiveRequestId = requestId ?? randomUUID();
+					const pageContext = this.pageContextProvider === void 0 ? void 0 : await this.pageContextProvider({
+						requestId: effectiveRequestId, sessionId: this.sessionId, content
+					});
 					result = await this.remote.session.prompt({
-						requestId: requestId ?? randomUUID(),
+						requestId: effectiveRequestId,
 						sessionId: this.sessionId,
 						mode,
 						content,
-						clientTimeZone
+						clientTimeZone,
+						...(pageContext === void 0 ? {} : { pageContext })
 					}, signal);
 				} else if (content.some((part) => part.type === "file")) result = {
 					ok: false,

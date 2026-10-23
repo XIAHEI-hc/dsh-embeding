@@ -125,7 +125,9 @@ test('Memory Lab tool definitions compile and register with the official schema 
     effect(callback) { dispose = callback() },
   })
 
-  assert.equal(definitions.length, 7)
+  assert.equal(definitions.length, 9)
+  assert.ok(definitions.some(item => item.name === 'memorylab_propose_page_action'))
+  assert.ok(definitions.some(item => item.name === 'memorylab_get_page_action_result'))
   dispose()
 })
 
@@ -206,5 +208,29 @@ test('Memory Lab upload reads official file blocks and pending submission refere
     client(root, store).upload({ attachmentId: ref.attachmentId }, imageExec),
     /ATTACHMENT_SESSION_MISMATCH/u,
   )
+})
+
+test('Host attachment admission uses the owning sessionQuery observation and disposes its lease', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'memorylab-host-attachments-'))
+  t.after(() => rmSync(root, {recursive: true, force: true}))
+  const bytes = 'CHN,BG,BANK,Row,Col\n0,0,0,1,2\n'
+  const hash = createHash('sha256').update(bytes).digest('hex')
+  const ref = {attachmentId: `sha256:${hash}`, name: 'host.csv', bytes: Buffer.byteLength(bytes)}
+  const directory = join(root, hash.slice(0, 2), hash)
+  mkdirSync(directory, {recursive: true}); writeFileSync(join(directory, ref.name), bytes)
+  let disposed = 0
+  const store = {requireActive() {return {contextId: 'context-a', instanceId: 'memorylab-dsh', accessGrantId: 'grant-a'}}}
+  const query = {async observeSession(id, options) {
+    assert.equal(id, 'session-a'); assert.equal(options.projectionMode, 'none')
+    return {header: {id}, events: [{type: 'user/message', data: {content: [{type: 'file', attachment: ref}]}}],
+      [Symbol.dispose]() {disposed++}}
+  }}
+  const tool = new MemoryLabToolClient({origin: 'http://memorylab.test', publicOrigin: 'http://portal.test',
+    instanceId: 'memorylab-dsh', secret: 'x'.repeat(32), attachmentsRoot: root, store, sessionQuery: query})
+  t.mock.method(globalThis, 'fetch', async () => new Response(JSON.stringify({ok: true, data: {job_id: 'real-host-shape'}})))
+  assert.equal((await tool.upload({attachmentId: ref.attachmentId}, exec)).data.job_id, 'real-host-shape')
+  assert.equal(disposed, 1)
+  await assert.rejects(tool.upload({attachmentId: `sha256:${'0'.repeat(64)}`}, exec), /ATTACHMENT_SESSION_MISMATCH/)
+  assert.equal(disposed, 2)
 })
 

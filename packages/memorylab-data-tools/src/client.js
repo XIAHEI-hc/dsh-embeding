@@ -33,9 +33,25 @@ function attachmentIdFromBlock(block) {
   return typeof id === 'string' && FILE_ATTACHMENT_ID.test(id) ? id : undefined
 }
 
-function sessionAttachmentRefs(exec) {
+async function sessionAttachmentRefs(exec, sessionQuery) {
   const refs = new Map()
   const session = exec?.agent?.session
+  if (sessionQuery !== undefined) {
+    const observed = await sessionQuery.observeSession(session.header.id, {signal: exec.signal, projectionMode: 'none'})
+    try {
+      if (observed.header.id !== session.header.id) throw new Error('ATTACHMENT_SESSION_MISMATCH')
+      for (const event of observed.events) {
+        if (event.type !== 'user/message') continue
+        // Host user/message data is the Message itself (the browser event
+        // projection may wrap it in message). Use the pinned Host contract.
+        for (const block of event.data?.content ?? []) {
+          const ref = fileAttachmentRefFromBlock(block)
+          if (ref !== undefined) refs.set(ref.attachmentId, ref)
+        }
+      }
+    } finally { observed[Symbol.dispose]() }
+    return refs
+  }
   const window = session?.eventSource?.getSnapshot?.()
   for (const entry of window?.entries ?? []) {
     const content = entry?.event?.data?.message?.content
@@ -100,6 +116,7 @@ export class MemoryLabToolClient {
     }
     this.store = options.store ?? new IntegrationStore(integrationStatePath())
     this.ownsStore = options.store === undefined
+    this.sessionQuery = options.sessionQuery
   }
 
   binding(exec) {
@@ -159,6 +176,39 @@ export class MemoryLabToolClient {
     }
   }
 
+  async pageAction(args, exec) {
+    const { binding, sessionId } = this.binding(exec)
+    const timer = this.signal(exec)
+    try {
+      const response = await fetch(`${this.origin}/api/ai/internal/ui-actions`, {
+        method: 'POST', headers: { ...this.headers(binding), 'content-type': 'application/json' },
+        body: JSON.stringify({ request_id: args.request_id ?? randomUUID(), context_id: binding.contextId,
+          session_id: sessionId, snapshot_id: args.snapshot_id, snapshot_sha256: args.snapshot_sha256,
+          type: args.type, params: args.params }), signal: timer.signal,
+      })
+      let result = await this.result(response)
+      // A pending proposal is not success. Return it explicitly when user input is needed.
+      const deadline = Date.now() + 20000
+      while (['proposed', 'executing'].includes(result.status) && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 500))
+        timer.signal.throwIfAborted()
+        result = await this.pageActionResult(result.action_id, exec, timer.signal)
+      }
+      return result
+    } finally { timer.dispose() }
+  }
+
+  async pageActionResult(actionId, exec, signal) {
+    const { binding } = this.binding(exec)
+    if (typeof actionId !== 'string' || !/^[a-zA-Z0-9-]{1,128}$/u.test(actionId)) throw new Error('ACTION_ID_INVALID')
+    const timer = signal ? undefined : this.signal(exec)
+    try {
+      return await this.result(await fetch(`${this.origin}/api/ai/internal/ui-actions/${encodeURIComponent(actionId)}`, {
+        headers: this.headers(binding), signal: signal ?? timer.signal,
+      }))
+    } finally { timer?.dispose() }
+  }
+
   async upload(reference, exec) {
     const { binding, sessionId } = this.binding(exec)
     const attachmentId = typeof reference === 'object' ? reference?.attachmentId : undefined
@@ -168,11 +218,11 @@ export class MemoryLabToolClient {
     }
     let candidate
     let selectedRef
+    const refs = await sessionAttachmentRefs(exec, this.sessionQuery)
     if (attachmentId !== undefined) {
       if (typeof attachmentId !== 'string' || !FILE_ATTACHMENT_ID.test(attachmentId)) {
         throw new Error('ATTACHMENT_ID_INVALID: attachment_id must be a canonical file reference')
       }
-      const refs = sessionAttachmentRefs(exec)
       if (!refs.has(attachmentId)) {
         throw new Error('ATTACHMENT_SESSION_MISMATCH: attachment is not present in the current DSH session')
       }
@@ -187,7 +237,6 @@ export class MemoryLabToolClient {
     if (actual !== this.attachmentsRoot && !actual.startsWith(`${this.attachmentsRoot}${sep}`)) {
       throw new Error('FILE_NOT_ALLOWED: only a file attached in this DSH conversation can be uploaded')
     }
-    const refs = sessionAttachmentRefs(exec)
     const allowedPaths = new Set()
     for (const ref of refs.values()) {
       const path = this.filePathForRef(ref)
@@ -195,7 +244,7 @@ export class MemoryLabToolClient {
       try { allowedPaths.add(realpathSync(path)) } catch { /* missing attachment is rejected below */ }
     }
     if (!allowedPaths.has(actual)) {
-      throw new Error('ATTACHMENT_SESSION_MISMATCH: file is not present in the current DSH session')
+      throw new Error(`ATTACHMENT_SESSION_MISMATCH: file is not present in the current DSH session (${refs.size} admitted file references)`)
     }
     if (selectedRef === undefined) {
       for (const ref of refs.values()) {

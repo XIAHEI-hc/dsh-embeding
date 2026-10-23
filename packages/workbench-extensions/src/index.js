@@ -5,14 +5,16 @@ import {
   loadEmbedConfig,
   loadIntegrationConfig,
   loadWorkspaceConfig,
+  supportsRemoteSkills,
 } from './config.js'
 import { WorkbenchExtensionError } from './errors.js'
 import { GrantStore } from './grants.js'
 import { bearer, method, readJson, requestId, secretEqual, writeError, writeJson } from './http.js'
-import { associateRemoteFork, registerIntegrationRoutes, rollbackRemoteFork } from './integration.js'
+import { associateRemoteFork, registerIntegrationRoutes, rollbackRemoteFork, verifyContext } from './integration.js'
 import { loadRuntimeRegistry, runtimeForSubject } from './runtime-registry.js'
 import { WorkspacePolicy } from './workspaces.js'
 import { enrichPagePrompt } from './page-context.js'
+import { pageSurfaceFromBinding } from './page-surface.js'
 import { createRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
 import { admitInvocation, recordUsage, synchronizeRemoteProvider } from '@dsh-workbench/memorylab-skill-provider'
 
@@ -70,6 +72,22 @@ function sameProviderBinding(left, right) {
     && left.instanceId === right.instanceId
 }
 
+// An Agent can outlive the browser grant that originally opened its session.
+// Register once in its Cordis scope, but borrow the current immutable provider
+// at each operation. Never retain an old grant in the registry's factory.
+export function liveAgentProvider(getInstalled, control) {
+  const current = () => {
+    const installed = getInstalled(control.signal)
+    installed.provider.setControl?.(control)
+    return installed.provider
+  }
+  return {
+    get name() { return current().name },
+    list(options) { return current().list(options) },
+    get(candidate, options) { return current().get(candidate, options) },
+  }
+}
+
 async function admitRemotePrompt(integration, config, request, admittedPrompts, getProvider) {
   const names = remoteSkillNames(request.content)
   if (names.length === 0) return
@@ -108,10 +126,16 @@ async function admitRemotePrompt(integration, config, request, admittedPrompts, 
       })
       enqueueAdmittedPrompt(admittedPrompts, request.sessionId, {
         invocationId: idempotencyId, nativeRequestId: idempotencyId,
+        requestId: request.requestId, runtimeId: binding.runtimeId, scope,
         skillName: selected.length > 1 ? 'ml-selected-skills' : candidate.name, locator: candidate.locator,
       })
     }
   } catch (error) {
+    await settlePendingAdmissions(admittedPrompts, request.sessionId,
+      item => item.requestId === request.requestId,
+      item => recordUsageDurably(integration, config, {
+        ...item, phase: 'failed', errorCode: error?.code ?? 'SKILL_ADMISSION_FAILED',
+      }))
     if (error instanceof WorkbenchExtensionError) throw error
     if (error?.code === 'SKILL_NOT_ENABLED' || error?.code === 'SKILL_VERSION_CHANGED') {
       throw new WorkbenchExtensionError('SKILL_VERSION_CHANGED', { cause: error })
@@ -132,6 +156,17 @@ export function enqueueAdmittedPrompt(admittedPrompts, sessionId, item) {
   queue.push(item)
   admittedPrompts.set(sessionId, queue)
   return true
+}
+
+// Claim before awaiting broker I/O: pre-step failure, error and dispose may
+// race. Each queued admission retains the exact scope that admitted it.
+export async function settlePendingAdmissions(admittedPrompts, sessionId, matches, report) {
+  const queue = admittedPrompts.get(sessionId) ?? []
+  const pending = queue.filter(matches)
+  const remaining = queue.filter(item => !matches(item))
+  if (remaining.length === 0) admittedPrompts.delete(sessionId)
+  else admittedPrompts.set(sessionId, remaining)
+  await Promise.all(pending.map(report))
 }
 
 /**
@@ -165,7 +200,7 @@ export async function recordUsageDurably(integration, config, payload, { signal,
 }
 
 export async function drainUsageOutbox(integration, config) {
-  if (integration === undefined || config.integrationKind !== 'memorylab') return
+  if (integration === undefined || !supportsRemoteSkills(config)) return
   for (const item of integration.store.pendingUsage()) {
     try {
       await recordUsage({
@@ -222,7 +257,7 @@ function embedHtml(config, channelId, nonce, advertisedCapabilities) {
     capabilities: advertisedCapabilities,
     initTimeoutMs: config.initTimeoutMs,
   })
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DSH 工作台</title><style nonce="${nonce}">html,body{height:100%;margin:0}body{display:grid;place-items:center;background:#f5f7fa;color:#24324a;font:15px system-ui,sans-serif}.state{max-width:520px;padding:24px;text-align:center}.spinner{width:24px;height:24px;margin:0 auto 16px;border:3px solid #d8deea;border-top-color:#285ec7;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}h1{font-size:18px;margin:0 0 8px}p{line-height:1.6;color:#5d687a}</style></head><body><main class="state"><div class="spinner" aria-hidden="true"></div><h1 id="title">正在连接工作台</h1><p id="detail">等待父系统完成可信授权。</p></main><script nonce="${nonce}">(()=>{'use strict';const cfg=${settings};const title=document.getElementById('title');const detail=document.getElementById('detail');let settled=false,timer;const send=(origin,type,requestId,payload)=>parent.postMessage({protocol:cfg.protocol,version:cfg.version,type,channel_id:cfg.channelId,request_id:requestId,payload},origin);const fail=(origin,requestId,code,message,retryable=false,action='retry')=>{settled=true;clearTimeout(timer);title.textContent='无法打开工作台';detail.textContent=message;send(origin,'error',requestId,{code,message,retryable,action})};for(const origin of cfg.allowedParentOrigins)send(origin,'ready',cfg.channelId,{capabilities:cfg.capabilities,auth_required:true});addEventListener('message',async event=>{if(settled||event.source!==parent||!cfg.allowedParentOrigins.includes(event.origin))return;const m=event.data;if(!m||typeof m!=='object'||m.protocol!==cfg.protocol||m.version!==cfg.version||m.type!=='init'||m.channel_id!==cfg.channelId||typeof m.request_id!=='string'||!m.payload||typeof m.payload!=='object'||typeof m.payload.ticket!=='string'||m.payload.ticket.length<32)return;settled=true;title.textContent='正在验证工作区';detail.textContent='授权成功后将打开完整 DSH Web。';timer=setTimeout(()=>fail(event.origin,m.request_id,'EMBED_INIT_TIMEOUT','初始化超时，请申请新授权后重试。',true,'request_ticket'),cfg.initTimeoutMs);try{const response=await fetch('/embed/bootstrap/redeem',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-request-id':m.request_id},body:JSON.stringify({protocol:cfg.protocol,version:cfg.version,channel_id:cfg.channelId,request_id:m.request_id,parent_origin:event.origin,ticket:m.payload.ticket,initial_prompt:typeof m.payload.initial_prompt==='string'?m.payload.initial_prompt:undefined})});const body=await response.json();if(!response.ok)throw body;const state={...body,parent_origin:event.origin,channel_id:cfg.channelId,request_id:m.request_id,session_binding:typeof body.session_id==='string'?'grant':'workspace',prompt_applied:false};sessionStorage.setItem('dsh.embed.pending.v1',JSON.stringify(state));clearTimeout(timer);location.replace('/?dsh_embed=1')}catch(error){const payload=error&&error.error;fail(event.origin,m.request_id,payload?.code??'EMBED_AUTH_UNAVAILABLE',payload?.message??'无法完成工作台登录。',payload?.retryable===true,payload?.action??'retry')}},{passive:true})})();</script></body></html>`
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DSH 工作台</title><style nonce="${nonce}">html,body{height:100%;margin:0}body{display:grid;place-items:center;background:#f5f7fa;color:#24324a;font:15px system-ui,sans-serif}.state{max-width:520px;padding:24px;text-align:center}.spinner{width:24px;height:24px;margin:0 auto 16px;border:3px solid #d8deea;border-top-color:#285ec7;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}h1{font-size:18px;margin:0 0 8px}p{line-height:1.6;color:#5d687a}</style></head><body><main class="state"><div class="spinner" aria-hidden="true"></div><h1 id="title">正在连接工作台</h1><p id="detail">等待父系统完成可信授权。</p></main><script nonce="${nonce}">(()=>{'use strict';const cfg=${settings};const title=document.getElementById('title');const detail=document.getElementById('detail');let settled=false,timer;const send=(origin,type,requestId,payload)=>parent.postMessage({protocol:cfg.protocol,version:cfg.version,type,channel_id:cfg.channelId,request_id:requestId,payload},origin);const fail=(origin,requestId,code,message,retryable=false,action='retry')=>{settled=true;clearTimeout(timer);title.textContent='无法打开工作台';detail.textContent=message;send(origin,'error',requestId,{code,message,retryable,action})};for(const origin of cfg.allowedParentOrigins)send(origin,'ready',cfg.channelId,{capabilities:cfg.capabilities,auth_required:true});addEventListener('message',async event=>{if(settled||event.source!==parent||!cfg.allowedParentOrigins.includes(event.origin))return;const m=event.data;if(!m||typeof m!=='object'||m.protocol!==cfg.protocol||m.version!==cfg.version||m.type!=='init'||m.channel_id!==cfg.channelId||typeof m.request_id!=='string'||!m.payload||typeof m.payload!=='object'||typeof m.payload.ticket!=='string'||m.payload.ticket.length<32)return;settled=true;title.textContent='正在验证工作区';detail.textContent='授权成功后将打开完整 DSH Web。';timer=setTimeout(()=>fail(event.origin,m.request_id,'EMBED_INIT_TIMEOUT','初始化超时，请申请新授权后重试。',true,'request_ticket'),cfg.initTimeoutMs);try{const response=await fetch('/embed/bootstrap/redeem',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-request-id':m.request_id},body:JSON.stringify({protocol:cfg.protocol,version:cfg.version,channel_id:cfg.channelId,request_id:m.request_id,parent_origin:event.origin,ticket:m.payload.ticket,initial_prompt:typeof m.payload.initial_prompt==='string'?m.payload.initial_prompt:undefined})});const body=await response.json();if(!response.ok)throw body;const state={...body,ui_profile:m.payload.ui_profile==='pixlab-workbench'?'pixlab-workbench':undefined,parent_origin:event.origin,channel_id:cfg.channelId,request_id:m.request_id,session_binding:typeof body.session_id==='string'?'grant':'workspace',prompt_applied:false};sessionStorage.setItem('dsh.embed.pending.v1',JSON.stringify(state));clearTimeout(timer);location.replace('/?dsh_embed=1')}catch(error){const payload=error&&error.error;fail(event.origin,m.request_id,payload?.code??'EMBED_AUTH_UNAVAILABLE',payload?.message??'无法完成工作台登录。',payload?.retryable===true,payload?.action??'retry')}},{passive:true})})();</script></body></html>`
 }
 
 function verifyAuthenticated(connection, req) {
@@ -306,7 +341,7 @@ function registerRoutes(ctx, config, policy, store, integration, runtimeRegistry
     if (!method(req, res, ['POST'])) return
     try {
       verifyAuthenticated(ctx.connection, req)
-      if (integration === undefined || integrationConfig.integrationKind !== 'memorylab') {
+      if (integration === undefined || !supportsRemoteSkills(integrationConfig)) {
         throw new WorkbenchExtensionError('SKILL_PROVIDER_UNAVAILABLE')
       }
       const body = await readJson(req)
@@ -443,7 +478,7 @@ export async function apply(ctx) {
           && metadata.runtime_id !== parent.runtimeId) {
           throw new WorkbenchExtensionError('SESSION_CONTEXT_MISMATCH')
         }
-        if (integrationConfig.integrationKind === 'memorylab') {
+        if (supportsRemoteSkills(integrationConfig)) {
           await associateRemoteFork(integrationConfig, {
             requestId: request.childSessionId,
             contextId: parent.contextId,
@@ -452,6 +487,7 @@ export async function apply(ctx) {
             workspaceId: parent.workspaceId,
             accessGrantId: parent.accessGrantId,
             runtimeId: parent.runtimeId ?? metadata.runtime_id,
+            pageSurface: pageSurfaceFromBinding(parent),
           })
         }
         integration.store.bind({
@@ -461,6 +497,7 @@ export async function apply(ctx) {
           sessionId: request.childSessionId,
           instanceId: integrationConfig.instanceId,
           metadata,
+          pageSurface: pageSurfaceFromBinding(parent),
         })
       } catch (error) { throw policy.asRemote(error) }
       return next()
@@ -468,7 +505,7 @@ export async function apply(ctx) {
     ctx.on('api-session/fork-failed', async (request, next) => {
       const parent = integration?.store.binding(request.sourceSessionId)
       if (parent !== undefined) {
-        if (integrationConfig.integrationKind === 'memorylab') {
+        if (supportsRemoteSkills(integrationConfig)) {
           try {
             await rollbackRemoteFork(integrationConfig, {
               requestId: request.childSessionId,
@@ -528,6 +565,11 @@ export async function apply(ctx) {
     return invocations
   }
   const admittedPrompts = new Map()
+  const failPending = (agent, error) => settlePendingAdmissions(admittedPrompts, agent.session.id,
+    () => true, item => recordUsageDurably(integration, integrationConfig, {
+      ...item, phase: error?.name === 'AbortError' || error?.code === 'ABORT_ERR' ? 'cancelled' : 'failed',
+      errorCode: error?.code ?? 'SKILL_PRE_STEP_FAILED',
+    }))
   const sessionProviders = new Map()
   const registeredProviders = new WeakSet()
   const providerRegistrationFibers = new WeakMap()
@@ -547,6 +589,7 @@ export async function apply(ctx) {
       instanceId: integrationConfig.instanceId,
       runtimeId: binding.runtimeId,
       scope,
+      integrationKind: integrationConfig.integrationKind,
       control: { signal, invalidate() {} },
     })
     const installed = { provider, binding, scope }
@@ -565,8 +608,7 @@ export async function apply(ctx) {
     // from becoming global.
     const fiber = agent.ctx.inject(['skills'], (skillsCtx) => {
       skillsCtx.skills.registerProvider(skillControl => {
-        installed.provider.setControl?.(skillControl)
-        return installed.provider
+        return liveAgentProvider(signal => ensureRemoteProvider(agent, signal), skillControl)
       })
       registeredProviders.add(agent)
     })
@@ -582,7 +624,7 @@ export async function apply(ctx) {
   const agentSyncControllers = new WeakMap()
   const backgroundSyncInFlight = new Map()
   const syncBoundRuntimes = async () => {
-    if (integration === undefined || integrationConfig.integrationKind !== 'memorylab') return
+    if (integration === undefined || !supportsRemoteSkills(integrationConfig)) return
     await drainUsageOutbox(integration, integrationConfig)
     for (const binding of integration.store.activeBindings()) {
       if (binding.runtimeId === undefined || binding.accessGrantId === undefined) continue
@@ -611,7 +653,7 @@ export async function apply(ctx) {
   await syncBoundRuntimes()
   const backgroundSync = setInterval(() => { void syncBoundRuntimes() }, 30_000)
   backgroundSync.unref?.()
-  if (integration !== undefined && integrationConfig.integrationKind === 'memorylab') {
+  if (integration !== undefined && supportsRemoteSkills(integrationConfig)) {
     ctx.on('agent/created', async ({ agent, signal }) => {
       let installed
       try { installed = ensureRemoteProvider(agent, signal) } catch (error) {
@@ -633,10 +675,13 @@ export async function apply(ctx) {
       const syncController = new AbortController()
       agentSyncControllers.set(agent, syncController)
       const timer = setInterval(() => {
-        synchronizeRemoteProvider({
+        void Promise.resolve().then(() => {
+          const current = ensureRemoteProvider(agent, syncController.signal)
+          return synchronizeRemoteProvider({
           baseUrl: integrationConfig.apiOrigin, serviceSecret: integrationConfig.toolSecret,
-          instanceId: integrationConfig.instanceId, runtimeId: binding.runtimeId, scope,
+          instanceId: integrationConfig.instanceId, runtimeId: current.binding.runtimeId, scope: current.scope,
           signal: syncController.signal,
+          })
         }).catch(() => {})
       }, 30_000)
       timer.unref?.()
@@ -650,7 +695,7 @@ export async function apply(ctx) {
       agentSyncControllers.delete(agent)
       agentProviders.delete(agent)
       agentInvocations.delete(agent)
-      admittedPrompts.delete(agent.session.id)
+      void failPending(agent, { name: 'AbortError', code: 'AGENT_DISPOSED' }).catch(() => {})
       sessionProviders.delete(agent.session.id)
       providerRegistrationFibers.delete(agent)
     }, { global: true })
@@ -679,7 +724,7 @@ export async function apply(ctx) {
         const names = remoteSkillNames(payload.messages.flatMap(message => message.content ?? []))
         if (names.length > 5) throw new WorkbenchExtensionError('SKILL_MULTIPLE')
         if (names.length === 1) {
-          const installed = agentProviders.get(payload.agent) ?? ensureRemoteProvider(payload.agent, payload.signal)
+          const installed = ensureRemoteProvider(payload.agent, payload.signal)
           await registerAgentProvider(payload.agent, installed)
           const candidate = (await installed.provider.list({ signal: payload.signal })).find(item => item.name === names[0])
           const queue = admittedPrompts.get(payload.agent.session.id) ?? []
@@ -726,11 +771,15 @@ export async function apply(ctx) {
             throw error
           }
           const invocations = agentInvocations.get(payload.agent) ?? []
-          invocations.push(...admitted.map(item => ({ locator: item.locator, invocationId: item.invocationId, nativeRequestId: item.nativeRequestId })))
+          invocations.push(...admitted.map(item => ({ locator: item.locator, invocationId: item.invocationId, nativeRequestId: item.nativeRequestId,
+            runtimeId: installed.binding.runtimeId, scope: installed.scope })))
           agentInvocations.set(payload.agent, invocations)
         }
         return next()
-      } catch (error) { throw policy.asRemote(error) }
+      } catch (error) {
+        await failPending(payload.agent, error)
+        throw policy.asRemote(error)
+      }
     }, { global: true })
     ctx.on('agent/turn-stopping', async ({ agent, signal }) => {
       const invocations = takeAgentInvocations(agent)
@@ -738,12 +787,13 @@ export async function apply(ctx) {
       if (invocations.length === 0 || installed === undefined) return
       try {
         for (const invocation of invocations) await recordUsageDurably(integration, integrationConfig, {
-          runtimeId: installed.binding.runtimeId, scope: installed.scope, locator: invocation.locator,
+          runtimeId: invocation.runtimeId, scope: invocation.scope, locator: invocation.locator,
           invocationId: invocation.invocationId, nativeRequestId: invocation.nativeRequestId, phase: 'completed',
         }, { signal })
       } catch { /* usage outbox/retry is owned by the runtime bridge */ }
     }, { global: true })
     ctx.on('agent/error', ({ agent, error }) => {
+      void failPending(agent, error).catch(() => {})
       const invocations = takeAgentInvocations(agent)
       const installed = agentProviders.get(agent)
       if (invocations.length === 0 || installed === undefined) return
@@ -752,7 +802,7 @@ export async function apply(ctx) {
         || error?.code === 'gateway/cancelled'
         || error?.code === 'CANCELLED'
       void Promise.all(invocations.map(invocation => recordUsageDurably(integration, integrationConfig, {
-        runtimeId: installed.binding.runtimeId, scope: installed.scope, locator: invocation.locator,
+        runtimeId: invocation.runtimeId, scope: invocation.scope, locator: invocation.locator,
         invocationId: invocation.invocationId, nativeRequestId: invocation.nativeRequestId,
         phase: cancelled ? 'cancelled' : 'failed', errorCode: error?.code,
       }))).catch(() => {})

@@ -2,10 +2,11 @@ import assert from 'node:assert/strict'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import test from 'node:test'
 
-import { isBindableInspection, verifyContext, verifySessionContext } from '../packages/workbench-extensions/src/integration.js'
-import { durableUsagePayload, drainUsageOutbox, recordUsageDurably, enqueueAdmittedPrompt } from '../packages/workbench-extensions/src/index.js'
+import { isBindableInspection, registerIntegrationRoutes, verifyContext, verifySessionContext } from '../packages/workbench-extensions/src/integration.js'
+import { durableUsagePayload, drainUsageOutbox, recordUsageDurably, enqueueAdmittedPrompt, liveAgentProvider, settlePendingAdmissions } from '../packages/workbench-extensions/src/index.js'
 import { normalizePageSurface } from '../packages/workbench-extensions/src/page-surface.js'
 import { IntegrationStore, requestHash } from '@dsh-workbench/extensions/integration-store'
 
@@ -16,6 +17,128 @@ function fixture() {
 }
 
 const metadata = { project_id: 'project-a', function_type: 'SITE_DESIGN' }
+
+for (const kind of ['probe', 'memorylab', 'pixlab']) {
+  test(`${kind} prepare and bind retain their existing grant protocol`, async () => {
+    const temp = fixture()
+    const previousState = process.env.MEMORYLAB_AI_INTEGRATION_STATE
+    const previousFetch = globalThis.fetch
+    process.env.MEMORYLAB_AI_INTEGRATION_STATE = temp.path
+    const routes = new Map()
+    const workspace = { workspace_id: 'workspace-a', alias: 'approved', path: '/workspace', mode: 'read_write' }
+    const sessions = new Set(['blank-session'])
+    const functionType = kind === 'probe' ? 'SITE_DESIGN' : kind === 'pixlab' ? 'PIX_LAB' : 'MEMORYLAB_CHN'
+    let networkCalls = 0
+    globalThis.fetch = async (url, options) => {
+      networkCalls++
+      if (url.endsWith('/verify')) {
+        assert.equal(options.headers['x-dsh-access-grant-id'], kind === 'probe' ? undefined : 'grant-a')
+        return Response.json({ ok: true, context: {
+          context_id: 'context-a', dsh_instance_id: 'instance-a', function_type: functionType,
+          ...(kind === 'probe' ? { project_id: 'project-a' } : { user_id: 'user-a', access_grant_id: 'grant-a' }),
+        } })
+      }
+      assert.notEqual(kind, 'probe', 'Probe must not call remote-grant association routes')
+      return Response.json({ accepted: true })
+    }
+    const integration = registerIntegrationRoutes({
+      webServer: { register({ path, handler }) { routes.set(path, handler); return () => routes.delete(path) } },
+      sessionController: {
+        async create({ sessionId }) { sessions.add(sessionId) },
+        async inspect(sessionId) { assert.ok(sessions.has(sessionId)); return { meta: { cwd: workspace.path }, events: [] } },
+      },
+      workspaceRegistry: { get() { return workspace }, archivedSessionIds: [] },
+    }, {
+      integrationKind: kind, apiOrigin: 'http://approved-host.test', instanceId: 'instance-a',
+      toolSecret: 'test-only', allowedFunctionTypes: [functionType], verifyTimeoutMs: 1000,
+    }, {
+      async checkAlias() { return workspace }, async checkWorkspaceId() { return workspace },
+      async requireWritable(value) { return value },
+      requireSession(workspaceId, sessionId) { assert.equal(workspaceId, workspace.workspace_id); assert.ok(sessions.has(sessionId)) },
+    }, () => ({ clientId: 'approved-client', workspaceAliases: ['approved'] }))
+    const invoke = async (route, body) => {
+      const req = Readable.from([Buffer.from(JSON.stringify(body))])
+      req.method = 'POST'; req.headers = {}
+      const result = {}
+      await routes.get(`/embed/control/integration/${route}`)(req, {
+        writeHead(status) { result.status = status },
+        end(bytes) { result.body = JSON.parse(bytes.toString()) },
+      })
+      return result
+    }
+    try {
+      const prepare = { context_id: 'context-a', workspace_alias: 'approved', request_id: 'prepare-request' }
+      const bind = { context_id: 'context-a', workspace_id: workspace.workspace_id, session_id: 'blank-session', request_id: 'bind-request' }
+      if (kind !== 'probe') {
+        for (const [route, body] of [['prepare', prepare], ['bind-session', bind]]) {
+          const result = await invoke(route, body)
+          assert.equal(result.status, 400)
+          assert.equal(result.body.error.code, 'EMBED_PROTOCOL_UNSUPPORTED')
+        }
+        assert.equal(networkCalls, 0, 'Missing grants must fail before upstream calls')
+        prepare.access_grant_id = bind.access_grant_id = 'grant-a'
+      }
+      const prepared = await invoke('prepare', prepare)
+      assert.equal(prepared.status, 201)
+      assert.equal(prepared.body.binding_status, 'active')
+      const bound = await invoke('bind-session', bind)
+      assert.equal(bound.status, 200)
+      assert.equal(bound.body.session_id, 'blank-session')
+      assert.equal(integration.store.binding('blank-session').accessGrantId, kind === 'probe' ? undefined : 'grant-a')
+    } finally {
+      integration.dispose()
+      globalThis.fetch = previousFetch
+      if (previousState === undefined) delete process.env.MEMORYLAB_AI_INTEGRATION_STATE
+      else process.env.MEMORYLAB_AI_INTEGRATION_STATE = previousState
+      temp.close()
+    }
+  })
+}
+
+test('pre-load failure settles admitted members once with their original grants while another prompt stays queued', async () => {
+  const queues = new Map()
+  const first = { invocationId: 'one', requestId: 'failed', scope: { access_grant_id: 'original' } }
+  enqueueAdmittedPrompt(queues, 'session-a', first)
+  enqueueAdmittedPrompt(queues, 'session-a', { ...first, invocationId: 'two' })
+  enqueueAdmittedPrompt(queues, 'session-a', { ...first, invocationId: 'later', requestId: 'next' })
+  let release
+  const waiting = new Promise(resolve => { release = resolve })
+  const reported = []
+  const report = async item => { reported.push(item); await waiting }
+  const pending = settlePendingAdmissions(queues, 'session-a', item => item.requestId === 'failed', report)
+  await settlePendingAdmissions(queues, 'session-a', item => item.requestId === 'failed', report)
+  assert.deepEqual(reported.map(item => item.invocationId), ['one', 'two'])
+  assert.ok(reported.every(item => item.scope.access_grant_id === 'original'))
+  assert.deepEqual(queues.get('session-a').map(item => item.invocationId), ['later'])
+  release(); await pending
+})
+
+test('standing Agent provider follows a refreshed grant and fails closed after revocation', async () => {
+  const calls = []
+  let grant = 'old'
+  const control = { signal: new AbortController().signal, invalidate() {} }
+  const registered = liveAgentProvider(signal => {
+    assert.equal(signal, control.signal)
+    if (grant === null) throw Object.assign(new Error('revoked'), { code: 'CONTEXT_REVOKED' })
+    const captured = grant
+    return { provider: {
+      name: 'memorylab-remote',
+      setControl(value) { assert.equal(value, control) },
+      async list() { calls.push(['list', captured]); return [{ name: 'ml-example' }] },
+      async get(candidate) { calls.push(['get', captured]); return candidate },
+    } }
+  }, control)
+  assert.equal(registered.name, 'memorylab-remote')
+  const [candidate] = await registered.list({})
+  grant = 'refreshed'
+  await registered.get(candidate, {})
+  await registered.list({})
+  assert.deepEqual(calls, [['list', 'old'], ['get', 'refreshed'], ['list', 'refreshed']])
+  grant = null
+  assert.throws(() => registered.list({}), { code: 'CONTEXT_REVOKED' })
+  assert.throws(() => registered.get(candidate, {}), { code: 'CONTEXT_REVOKED' })
+  assert.equal(calls.length, 3)
+})
 
 test('Memory Lab context verification requires the exact browser grant', async () => {
   await assert.rejects(
@@ -49,6 +172,31 @@ test('Memory Lab context verification rejects returned grant drift', async () =>
       }, 'context-a', undefined, undefined, 'grant-a'),
       { code: 'SESSION_CONTEXT_MISMATCH' },
     )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('PixLab global context routes to the authenticated user runtime, not a project subject', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    ok: true,
+    context: {
+      context_id: 'context-a', project_id: '*', user_id: 'user-a',
+      access_grant_id: 'grant-a', dsh_instance_id: 'instance-a', function_type: 'PIX_LAB',
+    },
+  }), { status: 200, headers: { 'content-type': 'application/json' } })
+  try {
+    const result = await verifyContext({
+      integrationKind: 'pixlab', apiOrigin: 'http://pixlab.test',
+      toolSecret: 'tool-secret', instanceId: 'instance-a',
+      allowedFunctionTypes: ['PIX_LAB'], verifyTimeoutMs: 1000,
+    }, 'context-a', undefined, {
+      runtimes: [{ subject: 'user-a', runtimeId: 'runtime-a', internalOrigin: 'http://runtime-a.test', status: 'ready' }],
+    }, 'grant-a')
+    assert.equal(result.user_id, 'user-a')
+    assert.equal(result.runtime_id, 'runtime-a')
+    assert.equal(result.runtime_origin, 'http://runtime-a.test')
   } finally {
     globalThis.fetch = originalFetch
   }
@@ -409,6 +557,26 @@ test('Memory Lab session status verifier binds context, session, grant, and inst
   } finally {
     globalThis.fetch = originalFetch
   }
+})
+
+test('PixLab multi-user session verifier sends and checks the bound runtime id', async () => {
+  const originalFetch = globalThis.fetch
+  let requested
+  globalThis.fetch = async (url, options) => {
+    requested = { url, options }
+    return new Response(JSON.stringify({ ok: true, scope: {
+      context_id: 'context-px', session_id: 'session-px', access_grant_id: 'grant-px',
+      dsh_instance_id: 'instance-px', runtime_id: 'runtime-px',
+    } }), { status: 200, headers: { 'content-type': 'application/json' } })
+  }
+  try {
+    const result = await verifySessionContext({
+      apiOrigin: 'http://pixlab.test', instanceId: 'instance-px', toolSecret: 's'.repeat(32),
+      verifyTimeoutMs: 1000,
+    }, 'context-px', 'session-px', 'grant-px', undefined, 'runtime-px')
+    assert.equal(result.runtime_id, 'runtime-px')
+    assert.equal(requested.options.headers['x-dsh-runtime-id'], 'runtime-px')
+  } finally { globalThis.fetch = originalFetch }
 })
 
 test('Memory Lab session status verifier maps a revoked lease to CONTEXT_REVOKED', async () => {

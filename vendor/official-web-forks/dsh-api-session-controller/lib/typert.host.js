@@ -798,6 +798,12 @@ const _deepseek_ai_dsh_api_session_controller_session_prompt_parameter_0$schema 
   'receiptId': z.intersection(z.string(), z.unknown()).readonly(),
 })])).readonly(),
   'clientTimeZone': z.string().readonly().optional(),
+  'pageContext': z.object({
+    'snapshotId': z.string().min(1),
+    'snapshotSha256': z.string().regex(/^[a-f0-9]{64}$/u),
+    'surfaceId': z.string().min(1),
+    'protocolVersion': z.literal('1.0'),
+  }).strict().readonly().optional(),
 }))
 let _deepseek_ai_dsh_api_session_controller_session_prompt_result$schema$value
 const _deepseek_ai_dsh_api_session_controller_session_prompt_result$schema = () => (_deepseek_ai_dsh_api_session_controller_session_prompt_result$schema$value ??= z.object({

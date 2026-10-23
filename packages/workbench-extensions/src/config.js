@@ -221,6 +221,16 @@ export function memoryLabIntegrationEnabled(value = process.env.MEMORYLAB_AI_INT
   throw configError('MEMORYLAB_AI_INTEGRATION_ENABLED 必须是 true/false 或 1/0')
 }
 
+export function pixLabIntegrationEnabled(value = process.env.PIXLAB_AI_INTEGRATION_ENABLED) {
+  if (value === undefined || value === '' || value === 'false' || value === '0') return false
+  if (value === 'true' || value === '1') return true
+  throw configError('PIXLAB_AI_INTEGRATION_ENABLED 必须是 true/false 或 1/0')
+}
+
+export function supportsRemoteSkills(config) {
+  return config?.integrationKind === 'memorylab' || config?.integrationKind === 'pixlab'
+}
+
 function optionalFeatureEnabled(value, label) {
   if (value === undefined || value === '' || value === 'false' || value === '0') return false
   if (value === 'true' || value === '1') return true
@@ -230,14 +240,15 @@ function optionalFeatureEnabled(value, label) {
 export function loadIntegrationConfig(
   probeEnabled = integrationEnabled(),
   memoryLabEnabled = memoryLabIntegrationEnabled(),
+  pixLabEnabled = pixLabIntegrationEnabled(),
 ) {
-  if (probeEnabled && memoryLabEnabled) {
-    throw configError('单个 DSH 实例不能同时启用 Probe 与 Memory Lab 集成')
+  if ([probeEnabled, memoryLabEnabled, pixLabEnabled].filter(Boolean).length > 1) {
+    throw configError('单个 DSH 实例不能同时启用多个 AI 宿主集成')
   }
-  if (!probeEnabled && !memoryLabEnabled) return undefined
-  const prefix = memoryLabEnabled ? 'MEMORYLAB_AI' : 'PROBE_AI'
+  if (!probeEnabled && !memoryLabEnabled && !pixLabEnabled) return undefined
+  const prefix = pixLabEnabled ? 'PIXLAB_AI' : memoryLabEnabled ? 'MEMORYLAB_AI' : 'PROBE_AI'
   const runnerRole = process.env.WORKBENCH_ROLE === 'runner'
-  const secretPrefix = memoryLabEnabled && runnerRole ? `${prefix}_RUNTIME` : `${prefix}_TOOL`
+  const secretPrefix = (memoryLabEnabled || pixLabEnabled) && runnerRole ? `${prefix}_RUNTIME` : `${prefix}_TOOL`
   const instanceId = string(process.env[`${prefix}_DSH_INSTANCE_ID`], `${prefix}_DSH_INSTANCE_ID`, { max: 128 })
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(instanceId)) {
     throw configError(`${prefix}_DSH_INSTANCE_ID 只允许字母、数字、点、下划线和连字符`)
@@ -245,14 +256,16 @@ export function loadIntegrationConfig(
   return {
     instanceId,
     runtimeId: runnerRole ? string(process.env.DSH_RUNTIME_ID, 'DSH_RUNTIME_ID', { max: 128 }) : undefined,
-    integrationKind: memoryLabEnabled ? 'memorylab' : 'probe',
+    integrationKind: pixLabEnabled ? 'pixlab' : memoryLabEnabled ? 'memorylab' : 'probe',
     apiOrigin: exactOrigin(process.env[`${prefix}_API_ORIGIN`], `${prefix}_API_ORIGIN`),
     toolSecret: environmentSecret(
       `${secretPrefix}_SECRET`, `${secretPrefix}_SECRET_FILE`,
-      `${memoryLabEnabled ? 'Memory Lab' : 'Probe'} 工具服务 secret`,
+      `${pixLabEnabled ? 'PixLab' : memoryLabEnabled ? 'Memory Lab' : 'Probe'} 工具服务 secret`,
     ),
     allowedFunctionTypes: memoryLabEnabled
       ? Object.freeze(['MEMORYLAB_CHN'])
+      : pixLabEnabled
+        ? Object.freeze(['PIX_LAB'])
       : Object.freeze(['SITE_DESIGN', 'PROBECARD_DESIGN']),
     pageContextEnabled: optionalFeatureEnabled(
       process.env.WORKBENCH_PAGE_CONTEXT_ENABLED,

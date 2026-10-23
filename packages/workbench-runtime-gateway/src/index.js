@@ -1,9 +1,12 @@
 import http from 'node:http'
-import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto'
+import { createHash, createHmac, timingSafeEqual, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { loadRuntimeRegistry, runtimeForSubject } from '../../workbench-extensions/src/runtime-registry.js'
+import nativeManifest from './native-routes.json' with { type: 'json' }
+const nativeManifestHash = createHash('sha256').update(readFileSync(new URL('./native-routes.json', import.meta.url))).digest('hex')
 
-const COOKIE = 'dsh_scope'
+const COOKIE = process.env.WORKBENCH_SCOPE_COOKIE_NAME ?? 'dsh_scope'
+if (!/^[A-Za-z0-9_]+$/u.test(COOKIE)) throw new Error('Invalid scope cookie name')
 
 function b64(value) { return Buffer.from(value).toString('base64url') }
 function unb64(value) { return Buffer.from(value, 'base64url').toString('utf8') }
@@ -122,11 +125,41 @@ async function readJson(req, limit = 64 * 1024) {
 }
 
 function targetFor(req, registry, secret, now, maxAgeMs) {
-  const token = parseCookies(req.headers.cookie).dsh_scope
+  const token = parseCookies(req.headers.cookie)[COOKIE]
   const scope = verifyScope(token, secret, maxAgeMs, now)
   if (!scope) return { error: 'AUTH_REQUIRED' }
   let runtime
   try { runtime = runtimeForSubject(registry, scope.subject) } catch (error) { return { error: error.code ?? 'RUNTIME_NOT_PROVISIONED' } }
+  if (runtime.runtimeId !== scope.runtime_id) return { error: 'SCOPE_DENIED' }
+  return { scope, runtime }
+}
+
+// The route key selects an immutable build-time descriptor, never a URL.
+export function nativeRoute(requestUrl, method, upgrade = false, scope) {
+  if (typeof requestUrl !== 'string') return undefined
+  const [path, query = ''] = requestUrl.split('?')
+  const prefix = '/internal/native/transport/'
+  if (!path.startsWith(prefix)) return undefined
+  const route = nativeManifest.routes[path.slice(prefix.length)]
+  if (!route || route.method !== method || Boolean(route.upgrade) !== upgrade) return undefined
+  if (route.path === '/api/session/uploadFileBinary') {
+    const params = new URLSearchParams(query)
+    const keys = [...params.keys()]
+    if (keys.some(key => !['sessionId', 'name'].includes(key)) || keys.length !== new Set(keys).size
+      || !scope || params.get('sessionId') !== scope.session_id || (params.get('name')?.length ?? 0) > 255) return undefined
+  } else if (route.path === '/api/file') {
+    const params = new URLSearchParams(query)
+    if ([...params.keys()].length !== 1 || !params.get('path')) return undefined
+  } else if (query) return undefined
+  return `${route.path}${query ? `?${query}` : ''}`
+}
+
+function nativeTarget(req, registry, scopeSecret, serviceSecret, maxAge) {
+  if (!serviceAuthorized(req, serviceSecret)) return { error: 'AUTH_REQUIRED' }
+  const scope = verifyScope(req.headers['x-dsh-native-scope'], scopeSecret, maxAge)
+  if (!scope || scope.audience !== 'memorylab-native' || !scope.connection_id) return { error: 'SCOPE_DENIED' }
+  let runtime
+  try { runtime = runtimeForSubject(registry, scope.subject) } catch { return { error: 'SCOPE_DENIED' } }
   if (runtime.runtimeId !== scope.runtime_id) return { error: 'SCOPE_DENIED' }
   return { scope, runtime }
 }
@@ -146,6 +179,33 @@ export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret,
   const handoffs = new Map()
   const server = http.createServer(async (req, res) => {
     if (req.url === '/health') return writeJson(res, 200, { status: 'ready', host_instance_id: registry.hostInstanceId })
+    if (req.url === '/internal/native/bind' && req.method === 'POST') {
+      if (!serviceAuthorized(req, serviceSecret)) return writeJson(res, 401, { error: { code: 'AUTH_REQUIRED' } })
+      try {
+        const body = await readJson(req)
+        for (const field of ['subject', 'runtime_id', 'context_id', 'session_id', 'access_grant_id', 'connection_id']) {
+          if (typeof body[field] !== 'string' || !body[field].length || body[field].length > 256) {
+            return writeJson(res, 422, { error: { code: 'INVALID_SCOPE' } })
+          }
+        }
+        const runtime = runtimeForSubject(registry, body.subject)
+        if (runtime.runtimeId !== body.runtime_id) return writeJson(res, 403, { error: { code: 'SCOPE_DENIED' } })
+        const scope = Object.fromEntries(['subject', 'runtime_id', 'context_id', 'session_id', 'access_grant_id', 'connection_id'].map(key => [key, body[key]]))
+        const live = await verifyLiveScope(scope, runtime, verifyOrigin, registry.hostInstanceId, verifyTimeoutMs, fetchImpl)
+        if (!live.ok) return writeJson(res, live.error === 'RUNTIME_UNAVAILABLE' ? 503 : 403, { error: { code: live.error } })
+        return writeJson(res, 200, { protocol: nativeManifest.protocol, manifest_hash: nativeManifestHash, scope_credential: signScope({ ...scope, audience: 'memorylab-native' }, scopeSecret) })
+      } catch (error) { return writeJson(res, 422, { error: { code: error.code ?? 'INVALID_SCOPE' } }) }
+    }
+    if (req.url?.startsWith('/internal/native/')) {
+      const target = nativeTarget(req, registry, scopeSecret, serviceSecret, maxAge)
+      if (target.error) return writeJson(res, target.error === 'AUTH_REQUIRED' ? 401 : 403, { error: { code: target.error } })
+      const route = nativeRoute(req.url, req.method, false, target.scope)
+      if (!route) return writeJson(res, 404, { error: { code: 'NATIVE_ROUTE_DENIED' } })
+      const live = await verifyLiveScope(target.scope, target.runtime, verifyOrigin, registry.hostInstanceId, verifyTimeoutMs, fetchImpl)
+      if (!live.ok) return writeJson(res, live.error === 'RUNTIME_UNAVAILABLE' ? 503 : 403, { error: { code: live.error } })
+      req.url = route
+      return proxyHttp(req, res, target.runtime.internalOrigin, target.scope, target.runtime)
+    }
     if (req.url === '/internal/scope/bind' && req.method === 'POST') {
       if (!serviceAuthorized(req, serviceSecret)) return writeJson(res, 401, { error: { code: 'AUTH_REQUIRED' } })
       try {
@@ -189,8 +249,15 @@ export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret,
     return proxyHttp(req, res, target.runtime.internalOrigin, target.scope, target.runtime)
   })
   server.on('upgrade', async (req, socket, head) => {
-    const target = targetFor(req, registry, scopeSecret, Date.now(), maxAge)
+    const native = req.url?.startsWith('/internal/native/')
+    const target = native ? nativeTarget(req, registry, scopeSecret, serviceSecret, maxAge)
+      : targetFor(req, registry, scopeSecret, Date.now(), maxAge)
     if (target.error) { socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); socket.destroy(); return }
+    if (native) {
+      const route = nativeRoute(req.url, 'GET', true)
+      if (!route) { socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n'); return }
+      req.url = route
+    }
     const live = await verifyLiveScope(target.scope, target.runtime, verifyOrigin, registry.hostInstanceId, verifyTimeoutMs, fetchImpl)
     if (!live.ok) { socket.write(`HTTP/1.1 ${live.error === 'RUNTIME_UNAVAILABLE' ? 503 : 403} Forbidden\r\nConnection: close\r\n\r\n`); socket.destroy(); return }
     proxyUpgrade(req, socket, head, target.runtime.internalOrigin, target.scope, target.runtime, async () => {
@@ -202,7 +269,8 @@ export function createRuntimeGateway({ registryPath, scopeSecret, serviceSecret,
 }
 
 function proxyHeaders(req, scope, runtime) {
-  const { cookie: _cookie, ...incoming } = req.headers
+  const incoming = Object.fromEntries(Object.entries(req.headers).filter(([key]) =>
+    key !== 'cookie' && key !== 'authorization' && !key.startsWith('x-dsh-')))
   const proof = scopeProof(scope, runtime)
   return {
     ...incoming,
@@ -233,8 +301,11 @@ function proxyHttp(req, res, origin, scope, runtime) {
   const target = safeUpstreamTarget(req.url ?? '/', origin)
   if (target === undefined) return writeJson(res, 400, { error: { code: 'INVALID_SCOPE' } })
   const upstream = http.request({ protocol: target.protocol, hostname: target.hostname, port: target.port, path: `${target.pathname}${target.search}`, method: req.method, headers: proxyHeaders(req, scope, runtime) }, response => {
-    res.writeHead(response.statusCode ?? 502, response.headers); response.pipe(res)
+    const { 'set-cookie': _cookie, ...headers } = response.headers
+    res.writeHead(response.statusCode ?? 502, headers); response.pipe(res)
   })
+  req.once('aborted', () => upstream.destroy())
+  res.once('close', () => { if (!res.writableFinished) upstream.destroy() })
   upstream.on('error', error => { if (!res.headersSent) writeJson(res, 502, { error: { code: 'RUNTIME_UNAVAILABLE', message: error.message } }); else res.destroy(error) })
   req.pipe(upstream)
 }
@@ -271,7 +342,11 @@ function proxyUpgrade(req, socket, head, origin, scope, runtime, verify, liveInt
     const cleanup = () => clearInterval(timer)
     socket.once('close', cleanup)
     upstreamSocket.once('close', cleanup)
+    socket.once('close', () => upstreamSocket.destroy())
+    upstreamSocket.once('close', () => socket.destroy())
   })
+  upstream.on('response', response => { response.resume(); socket.end(`HTTP/1.1 ${response.statusCode ?? 502} Upstream Rejected\r\nConnection: close\r\n\r\n`) })
+  socket.once('close', () => upstream.destroy())
   upstream.on('error', () => socket.destroy())
   upstream.end()
 }

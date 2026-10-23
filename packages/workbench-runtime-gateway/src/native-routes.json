@@ -1,0 +1,688 @@
+{
+  "protocol": "dsh-native-rc.2",
+  "sources": [
+    {
+      "path": "node_modules/@deepseek-ai/dsh-agent-preset-registry/lib/typert.remote-client.js",
+      "sha256": "16202b460d96a89ad6a4a97e0f7807f2e3277bc01c40212f4694e933d8e7f744"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-api-account-controller/lib/typert.remote-client.js",
+      "sha256": "4f8bc055588b0306527040b025cb886ce9e39431513fb1d92876af44cfcaeef0"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-api-job-controller/lib/typert.remote-client.js",
+      "sha256": "131e8d5e576adebdb2519ab5b4a96ec5bfc7d6b9badfa7b24ec32117fb121a12"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-api-session-controller/lib/typert.remote-client.js",
+      "sha256": "7af83352975bc861d04f2b6987fa51e58e6f708a2ab277e601fa85e4c8ef00f7"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-api-settings-controller/lib/typert.remote-client.js",
+      "sha256": "1aa9fc66a6e647c1b05d9181820da4dff38838952d655219eafacde37bb687e0"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-api-terminal-controller/lib/typert.remote-client.js",
+      "sha256": "bf54d66afd03d3f968030374b20cdf610714bd46b45ee10876425c05324beab1"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-api-workspace-controller/lib/typert.remote-client.js",
+      "sha256": "e8644fc785ff1ac6039f5166cbd74e4cdb32fc2b36c07b50bc48b0af78c4d02b"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-api-workspace-files/lib/typert.remote-client.js",
+      "sha256": "6add32c4fc475719e64a5325611633e03d77fe75b72bbe986ae73962afd8f25d"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-client-file-upload/lib/typert.remote-client.js",
+      "sha256": "3982cd1bf4ca5a4f0342195f27728469c6d74d9578876d3ba05d3df443f08e59"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-client-product-analytics/lib/typert.remote-client.js",
+      "sha256": "af9ee85e6d23337118458d85932cbca375a01505cfb4ceebbc1007d6301ad8fe"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-client-ui-plugin-manager/lib/typert.remote-client.js",
+      "sha256": "e892565fcbd84c19935b0c0f44c2248513abc3460c618d8900d0db1f0d0fa2ad"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-command-feedback/lib/typert.remote-client.js",
+      "sha256": "87583d97b580e30da529ad078a6ac14cb319f202a083a9133c51eecb2dc50ac7"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-commands/lib/typert.remote-client.js",
+      "sha256": "19783415466cb498a5dd560c6568716cad39223e2587fc0a16350b591fe051ab"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-cordis-host-runner/lib/typert.remote-client.js",
+      "sha256": "6a25b390dbc13a749db46160dbe5ccb6814d8866175a00343b5737eb4fca7d3f"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-experimental-api-speech-to-text/lib/typert.remote-client.js",
+      "sha256": "336db19044225888308e3f3ed69253288095de0783deebead755364d1dd5a7ad"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-goal/lib/typert.remote-client.js",
+      "sha256": "35df09d652b62cc8a3edf5ed9a4f0e84fbfdffbf9c67f778024dfe97758bd7a9"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-host-plugin-inventory/lib/typert.remote-client.js",
+      "sha256": "66129f7bd3aabf40020ed60059a6e18712ce7acf8925117212576d05ccd2c6da"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-llm/lib/typert.remote-client.js",
+      "sha256": "8be01248041bd25c89117f1ad76934638f74808166bc1f0ae027a6ed24a5c6e8"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-message-feedback/lib/typert.remote-client.js",
+      "sha256": "1107d440ecfedc9540ef205c4574c1e87c1e724e5ff97b87759fdfd02d5e1db7"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-office-to-pdf/lib/typert.remote-client.js",
+      "sha256": "5a4e17985115a422ded5cd897fdadfe4d5335d8a2be062f893df8bb45214c09a"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-permission-presets/lib/typert.remote-client.js",
+      "sha256": "3b60396c17e89cedacf2f26a5ec50aa3432f9d92ea27cbedd854f705527e4bc6"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-plugin-manager/lib/typert.remote-client.js",
+      "sha256": "41292d52847b26265f4b55807ad3118b75d46a02edc7bbb66ab04cdc2f88822d"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-schedule/lib/typert.remote-client.js",
+      "sha256": "1bee6b23f670520251814ce32772390d734cb0141458670819b4072e80fb89c4"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-session-reference/lib/typert.remote-client.js",
+      "sha256": "eefacd1e266cf338184f964b7d8c644047452017d54f81f7cd3b03c56ea51c8e"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-subagent/lib/typert.remote-client.js",
+      "sha256": "ebc1e1efb9f9c2c4ad6cf7354d076399466020f64b830182721fec2f8fc89cbe"
+    },
+    {
+      "path": "node_modules/@deepseek-ai/dsh-user-questions/lib/typert.remote-client.js",
+      "sha256": "7948e2333c1f307c8907060315a233f567c31dd41b1c5f6c9fdba8d489c111ac"
+    }
+  ],
+  "routes": {
+    "rpc/$events/result": {
+      "method": "POST",
+      "path": "/api/$events/result"
+    },
+    "rpc/account/ackBonusNotified": {
+      "method": "POST",
+      "path": "/api/account/ackBonusNotified"
+    },
+    "rpc/account/cancelSignIn": {
+      "method": "POST",
+      "path": "/api/account/cancelSignIn"
+    },
+    "rpc/account/getBalance": {
+      "method": "POST",
+      "path": "/api/account/getBalance"
+    },
+    "rpc/account/getProfile": {
+      "method": "POST",
+      "path": "/api/account/getProfile"
+    },
+    "rpc/account/getState": {
+      "method": "POST",
+      "path": "/api/account/getState"
+    },
+    "rpc/account/getUnnotifiedBonuses": {
+      "method": "POST",
+      "path": "/api/account/getUnnotifiedBonuses"
+    },
+    "rpc/account/hasRunningAccountTasks": {
+      "method": "POST",
+      "path": "/api/account/hasRunningAccountTasks"
+    },
+    "rpc/account/signOut": {
+      "method": "POST",
+      "path": "/api/account/signOut"
+    },
+    "rpc/account/startSignIn": {
+      "method": "POST",
+      "path": "/api/account/startSignIn"
+    },
+    "rpc/account/watch": {
+      "method": "POST",
+      "path": "/api/account/watch"
+    },
+    "rpc/account/watchExpiry": {
+      "method": "POST",
+      "path": "/api/account/watchExpiry"
+    },
+    "rpc/agentPresets/list": {
+      "method": "POST",
+      "path": "/api/agentPresets/list"
+    },
+    "rpc/agentPresets/read": {
+      "method": "POST",
+      "path": "/api/agentPresets/read"
+    },
+    "rpc/agentPresets/select": {
+      "method": "POST",
+      "path": "/api/agentPresets/select"
+    },
+    "rpc/commands/execute": {
+      "method": "POST",
+      "path": "/api/commands/execute"
+    },
+    "rpc/commands/list": {
+      "method": "POST",
+      "path": "/api/commands/list"
+    },
+    "rpc/credentials/describe": {
+      "method": "POST",
+      "path": "/api/credentials/describe"
+    },
+    "rpc/credentials/set": {
+      "method": "POST",
+      "path": "/api/credentials/set"
+    },
+    "rpc/credentials/unset": {
+      "method": "POST",
+      "path": "/api/credentials/unset"
+    },
+    "rpc/directoryPicker/createDirectory": {
+      "method": "POST",
+      "path": "/api/directoryPicker/createDirectory"
+    },
+    "rpc/directoryPicker/list": {
+      "method": "POST",
+      "path": "/api/directoryPicker/list"
+    },
+    "rpc/directoryPicker/pick": {
+      "method": "POST",
+      "path": "/api/directoryPicker/pick"
+    },
+    "rpc/dynamicCordisRunner/getClientCode": {
+      "method": "POST",
+      "path": "/api/dynamicCordisRunner/getClientCode"
+    },
+    "rpc/dynamicCordisRunner/inventory": {
+      "method": "POST",
+      "path": "/api/dynamicCordisRunner/inventory"
+    },
+    "rpc/dynamicCordisRunner/invoke": {
+      "method": "POST",
+      "path": "/api/dynamicCordisRunner/invoke"
+    },
+    "rpc/dynamicCordisRunner/reportClientGuardFailure": {
+      "method": "POST",
+      "path": "/api/dynamicCordisRunner/reportClientGuardFailure"
+    },
+    "rpc/dynamicCordisRunner/reportRenderFailure": {
+      "method": "POST",
+      "path": "/api/dynamicCordisRunner/reportRenderFailure"
+    },
+    "rpc/dynamicCordisRunner/resolveInspectQuery": {
+      "method": "POST",
+      "path": "/api/dynamicCordisRunner/resolveInspectQuery"
+    },
+    "rpc/dynamicCordisRunner/resolveRequestRun": {
+      "method": "POST",
+      "path": "/api/dynamicCordisRunner/resolveRequestRun"
+    },
+    "rpc/dynamicCordisRunner/runHostHalf": {
+      "method": "POST",
+      "path": "/api/dynamicCordisRunner/runHostHalf"
+    },
+    "rpc/dynamicCordisRunner/settleUserRun": {
+      "method": "POST",
+      "path": "/api/dynamicCordisRunner/settleUserRun"
+    },
+    "rpc/dynamicCordisRunner/stopFromPanel": {
+      "method": "POST",
+      "path": "/api/dynamicCordisRunner/stopFromPanel"
+    },
+    "rpc/dynamicCordisRunner/syncInspectManifest": {
+      "method": "POST",
+      "path": "/api/dynamicCordisRunner/syncInspectManifest"
+    },
+    "rpc/dynamicCordisRunner/undefineFromPanel": {
+      "method": "POST",
+      "path": "/api/dynamicCordisRunner/undefineFromPanel"
+    },
+    "rpc/fileReferences/list": {
+      "method": "POST",
+      "path": "/api/fileReferences/list"
+    },
+    "rpc/fileUploads/upload": {
+      "method": "POST",
+      "path": "/api/fileUploads/upload"
+    },
+    "rpc/goals/clear": {
+      "method": "POST",
+      "path": "/api/goals/clear"
+    },
+    "rpc/goals/complete": {
+      "method": "POST",
+      "path": "/api/goals/complete"
+    },
+    "rpc/goals/create": {
+      "method": "POST",
+      "path": "/api/goals/create"
+    },
+    "rpc/goals/edit": {
+      "method": "POST",
+      "path": "/api/goals/edit"
+    },
+    "rpc/goals/get": {
+      "method": "POST",
+      "path": "/api/goals/get"
+    },
+    "rpc/goals/pause": {
+      "method": "POST",
+      "path": "/api/goals/pause"
+    },
+    "rpc/goals/resume": {
+      "method": "POST",
+      "path": "/api/goals/resume"
+    },
+    "rpc/job/follow": {
+      "method": "POST",
+      "path": "/api/job/follow"
+    },
+    "rpc/job/kill": {
+      "method": "POST",
+      "path": "/api/job/kill"
+    },
+    "rpc/job/list": {
+      "method": "POST",
+      "path": "/api/job/list"
+    },
+    "rpc/llm/discoverModels": {
+      "method": "POST",
+      "path": "/api/llm/discoverModels"
+    },
+    "rpc/llm/listConfigurableProviders": {
+      "method": "POST",
+      "path": "/api/llm/listConfigurableProviders"
+    },
+    "rpc/llm/listProviders": {
+      "method": "POST",
+      "path": "/api/llm/listProviders"
+    },
+    "rpc/messageFeedback/delete": {
+      "method": "POST",
+      "path": "/api/messageFeedback/delete"
+    },
+    "rpc/messageFeedback/list": {
+      "method": "POST",
+      "path": "/api/messageFeedback/list"
+    },
+    "rpc/messageFeedback/put": {
+      "method": "POST",
+      "path": "/api/messageFeedback/put"
+    },
+    "rpc/officeToPdf/generation": {
+      "method": "POST",
+      "path": "/api/officeToPdf/generation"
+    },
+    "rpc/officeToPdf/render": {
+      "method": "POST",
+      "path": "/api/officeToPdf/render"
+    },
+    "rpc/permissionPresets/catalog": {
+      "method": "POST",
+      "path": "/api/permissionPresets/catalog"
+    },
+    "rpc/pluginInventory/list": {
+      "method": "POST",
+      "path": "/api/pluginInventory/list"
+    },
+    "rpc/pluginManager/cancelInstall": {
+      "method": "POST",
+      "path": "/api/pluginManager/cancelInstall"
+    },
+    "rpc/pluginManager/inspect": {
+      "method": "POST",
+      "path": "/api/pluginManager/inspect"
+    },
+    "rpc/pluginManager/installBundle": {
+      "method": "POST",
+      "path": "/api/pluginManager/installBundle"
+    },
+    "rpc/pluginManager/listBundles": {
+      "method": "POST",
+      "path": "/api/pluginManager/listBundles"
+    },
+    "rpc/pluginManager/listPlugins": {
+      "method": "POST",
+      "path": "/api/pluginManager/listPlugins"
+    },
+    "rpc/pluginManager/listVersionExemptions": {
+      "method": "POST",
+      "path": "/api/pluginManager/listVersionExemptions"
+    },
+    "rpc/pluginManager/registries": {
+      "method": "POST",
+      "path": "/api/pluginManager/registries"
+    },
+    "rpc/pluginManager/removeBundle": {
+      "method": "POST",
+      "path": "/api/pluginManager/removeBundle"
+    },
+    "rpc/pluginManager/setBundleEnabled": {
+      "method": "POST",
+      "path": "/api/pluginManager/setBundleEnabled"
+    },
+    "rpc/pluginManager/setPluginEnabled": {
+      "method": "POST",
+      "path": "/api/pluginManager/setPluginEnabled"
+    },
+    "rpc/pluginManager/setVersionExemption": {
+      "method": "POST",
+      "path": "/api/pluginManager/setVersionExemption"
+    },
+    "rpc/pluginManager/waitForInstall": {
+      "method": "POST",
+      "path": "/api/pluginManager/waitForInstall"
+    },
+    "rpc/pluginRegistryProbe/fastest": {
+      "method": "POST",
+      "path": "/api/pluginRegistryProbe/fastest"
+    },
+    "rpc/productAnalytics/enabled": {
+      "method": "POST",
+      "path": "/api/productAnalytics/enabled"
+    },
+    "rpc/productAnalytics/report": {
+      "method": "POST",
+      "path": "/api/productAnalytics/report"
+    },
+    "rpc/productAnalytics/watchPolicy": {
+      "method": "POST",
+      "path": "/api/productAnalytics/watchPolicy"
+    },
+    "rpc/schedule/catalog": {
+      "method": "POST",
+      "path": "/api/schedule/catalog"
+    },
+    "rpc/schedule/delete": {
+      "method": "POST",
+      "path": "/api/schedule/delete"
+    },
+    "rpc/schedule/history": {
+      "method": "POST",
+      "path": "/api/schedule/history"
+    },
+    "rpc/schedule/list": {
+      "method": "POST",
+      "path": "/api/schedule/list"
+    },
+    "rpc/schedule/update": {
+      "method": "POST",
+      "path": "/api/schedule/update"
+    },
+    "rpc/session/attachment": {
+      "method": "POST",
+      "path": "/api/session/attachment"
+    },
+    "rpc/session/canOpenWorkspacePath": {
+      "method": "POST",
+      "path": "/api/session/canOpenWorkspacePath"
+    },
+    "rpc/session/cancel": {
+      "method": "POST",
+      "path": "/api/session/cancel"
+    },
+    "rpc/session/control": {
+      "method": "POST",
+      "path": "/api/session/control"
+    },
+    "rpc/session/create": {
+      "method": "POST",
+      "path": "/api/session/create"
+    },
+    "rpc/session/follow": {
+      "method": "POST",
+      "path": "/api/session/follow"
+    },
+    "rpc/session/fork": {
+      "method": "POST",
+      "path": "/api/session/fork"
+    },
+    "rpc/session/initializeDefaultModel": {
+      "method": "POST",
+      "path": "/api/session/initializeDefaultModel"
+    },
+    "rpc/session/list": {
+      "method": "POST",
+      "path": "/api/session/list"
+    },
+    "rpc/session/modelCatalog": {
+      "method": "POST",
+      "path": "/api/session/modelCatalog"
+    },
+    "rpc/session/openWorkspacePath": {
+      "method": "POST",
+      "path": "/api/session/openWorkspacePath"
+    },
+    "rpc/session/page": {
+      "method": "POST",
+      "path": "/api/session/page"
+    },
+    "rpc/session/projections": {
+      "method": "POST",
+      "path": "/api/session/projections"
+    },
+    "rpc/session/prompt": {
+      "method": "POST",
+      "path": "/api/session/prompt"
+    },
+    "rpc/session/rename": {
+      "method": "POST",
+      "path": "/api/session/rename"
+    },
+    "rpc/session/search": {
+      "method": "POST",
+      "path": "/api/session/search"
+    },
+    "rpc/session/selectModel": {
+      "method": "POST",
+      "path": "/api/session/selectModel"
+    },
+    "rpc/session/updateQueue": {
+      "method": "POST",
+      "path": "/api/session/updateQueue"
+    },
+    "rpc/session/workspacePathApplications": {
+      "method": "POST",
+      "path": "/api/session/workspacePathApplications"
+    },
+    "rpc/sessionFeedback/record": {
+      "method": "POST",
+      "path": "/api/sessionFeedback/record"
+    },
+    "rpc/sessionReferenceResolver/candidates": {
+      "method": "POST",
+      "path": "/api/sessionReferenceResolver/candidates"
+    },
+    "rpc/settings/describe": {
+      "method": "POST",
+      "path": "/api/settings/describe"
+    },
+    "rpc/settings/mutate": {
+      "method": "POST",
+      "path": "/api/settings/mutate"
+    },
+    "rpc/settings/openSettingsDocument": {
+      "method": "POST",
+      "path": "/api/settings/openSettingsDocument"
+    },
+    "rpc/settings/replace": {
+      "method": "POST",
+      "path": "/api/settings/replace"
+    },
+    "rpc/settings/update": {
+      "method": "POST",
+      "path": "/api/settings/update"
+    },
+    "rpc/skills/list": {
+      "method": "POST",
+      "path": "/api/skills/list"
+    },
+    "rpc/speech/cancelPreparation": {
+      "method": "POST",
+      "path": "/api/speech/cancelPreparation"
+    },
+    "rpc/speech/catalog": {
+      "method": "POST",
+      "path": "/api/speech/catalog"
+    },
+    "rpc/speech/configure": {
+      "method": "POST",
+      "path": "/api/speech/configure"
+    },
+    "rpc/speech/follow": {
+      "method": "POST",
+      "path": "/api/speech/follow"
+    },
+    "rpc/speech/prepare": {
+      "method": "POST",
+      "path": "/api/speech/prepare"
+    },
+    "rpc/speech/transcribe": {
+      "method": "POST",
+      "path": "/api/speech/transcribe"
+    },
+    "rpc/subagents/interruptByParent": {
+      "method": "POST",
+      "path": "/api/subagents/interruptByParent"
+    },
+    "rpc/subagents/prompt": {
+      "method": "POST",
+      "path": "/api/subagents/prompt"
+    },
+    "rpc/terminal/close": {
+      "method": "POST",
+      "path": "/api/terminal/close"
+    },
+    "rpc/terminal/create": {
+      "method": "POST",
+      "path": "/api/terminal/create"
+    },
+    "rpc/terminal/environment": {
+      "method": "POST",
+      "path": "/api/terminal/environment"
+    },
+    "rpc/terminal/follow": {
+      "method": "POST",
+      "path": "/api/terminal/follow"
+    },
+    "rpc/terminal/list": {
+      "method": "POST",
+      "path": "/api/terminal/list"
+    },
+    "rpc/terminal/rename": {
+      "method": "POST",
+      "path": "/api/terminal/rename"
+    },
+    "rpc/terminal/resize": {
+      "method": "POST",
+      "path": "/api/terminal/resize"
+    },
+    "rpc/terminal/retain": {
+      "method": "POST",
+      "path": "/api/terminal/retain"
+    },
+    "rpc/terminal/shells": {
+      "method": "POST",
+      "path": "/api/terminal/shells"
+    },
+    "rpc/terminal/write": {
+      "method": "POST",
+      "path": "/api/terminal/write"
+    },
+    "rpc/userQuestions/answer": {
+      "method": "POST",
+      "path": "/api/userQuestions/answer"
+    },
+    "rpc/userQuestions/attachWait": {
+      "method": "POST",
+      "path": "/api/userQuestions/attachWait"
+    },
+    "rpc/workspace/archiveSession": {
+      "method": "POST",
+      "path": "/api/workspace/archiveSession"
+    },
+    "rpc/workspace/create": {
+      "method": "POST",
+      "path": "/api/workspace/create"
+    },
+    "rpc/workspace/delete": {
+      "method": "POST",
+      "path": "/api/workspace/delete"
+    },
+    "rpc/workspace/follow": {
+      "method": "POST",
+      "path": "/api/workspace/follow"
+    },
+    "rpc/workspace/initializeDefault": {
+      "method": "POST",
+      "path": "/api/workspace/initializeDefault"
+    },
+    "rpc/workspace/insertBefore": {
+      "method": "POST",
+      "path": "/api/workspace/insertBefore"
+    },
+    "rpc/workspace/insertSessionBefore": {
+      "method": "POST",
+      "path": "/api/workspace/insertSessionBefore"
+    },
+    "rpc/workspace/pinSession": {
+      "method": "POST",
+      "path": "/api/workspace/pinSession"
+    },
+    "rpc/workspace/rename": {
+      "method": "POST",
+      "path": "/api/workspace/rename"
+    },
+    "rpc/workspace/unarchiveSession": {
+      "method": "POST",
+      "path": "/api/workspace/unarchiveSession"
+    },
+    "rpc/workspace/unpinSession": {
+      "method": "POST",
+      "path": "/api/workspace/unpinSession"
+    },
+    "rpc/workspaceFiles/changes": {
+      "method": "POST",
+      "path": "/api/workspaceFiles/changes"
+    },
+    "rpc/workspaceFiles/list": {
+      "method": "POST",
+      "path": "/api/workspaceFiles/list"
+    },
+    "rpc/workspaceFiles/read": {
+      "method": "POST",
+      "path": "/api/workspaceFiles/read"
+    },
+    "rpc/workspaceFiles/readBytes": {
+      "method": "POST",
+      "path": "/api/workspaceFiles/readBytes"
+    },
+    "rpc/workspaceFiles/stat": {
+      "method": "POST",
+      "path": "/api/workspaceFiles/stat"
+    },
+    "upload": {
+      "method": "POST",
+      "path": "/api/session/uploadFileBinary"
+    },
+    "file": {
+      "method": "GET",
+      "path": "/api/file"
+    },
+    "stream": {
+      "method": "GET",
+      "path": "/api/remote.mux",
+      "upgrade": true
+    }
+  }
+}

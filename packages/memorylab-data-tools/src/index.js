@@ -2,7 +2,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import { MemoryLabToolClient } from './client.js'
 
 export const name = 'memorylab-data-tools'
-export const inject = ['tools']
+export const inject = ['tools', 'sessionQuery']
 
 const TOOLS = Object.freeze([
   ['memorylab_list_datasets', 'List CHN analysis datasets visible to the bound Memory Lab user.', {
@@ -85,11 +85,43 @@ function attachmentUploadDefinition(client) {
   })
 }
 
+function pageActionDefinition(client) {
+  return defineTool({
+    name: 'memorylab_propose_page_action',
+    description: 'Propose a controlled action on the exact Memory Lab page instance in PAGE_CONTEXT_DATA_V1. Use its snapshot_id and snapshot_sha256. view.apply uses complete filters and scope; view.highlight targets existing banks; view.undo restores the previous committed view. A proposed/executing result is pending, never applied. Report only the receipt facts. User approval may be required in the page.',
+    parameters: {
+      snapshot_id: { type: 'string', required: true },
+      snapshot_sha256: { type: 'string', required: true },
+      type: { type: 'string', enum: ['view.apply', 'view.highlight', 'view.undo'], required: true },
+      params: { type: 'object', additionalProperties: true, required: true },
+      request_id: { type: 'string', description: 'Stable idempotency key for retries of the identical proposal.' },
+    },
+    output: { schema: { type: 'object', additionalProperties: false, properties: { response_json: { type: 'string', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: value.response_json }] },
+    async execute(args, exec) { return { response_json: JSON.stringify(await client.pageAction(args, exec)) } },
+    presentCall: args => ({ card: 'generic', title: 'Memory Lab: page action', kind: 'other', rawInput: args }),
+  })
+}
+
+function pageActionResultDefinition(client) {
+  return defineTool({
+    name: 'memorylab_get_page_action_result',
+    description: 'Read the authorized durable result of a previously proposed page action. Use after disconnect or while approval/execution is pending. Never resubmit an unknown execution blindly.',
+    parameters: { action_id: { type: 'string', required: true } },
+    output: { schema: { type: 'object', additionalProperties: false, properties: { response_json: { type: 'string', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: value.response_json }] },
+    async execute(args, exec) { return { response_json: JSON.stringify(await client.pageActionResult(args.action_id, exec)) } },
+    presentCall: args => ({ card: 'generic', title: 'Memory Lab: page receipt', kind: 'other', rawInput: args }),
+  })
+}
+
 export function apply(ctx) {
   if (!['true', '1'].includes(process.env.MEMORYLAB_AI_INTEGRATION_ENABLED ?? '')) return
-  const client = new MemoryLabToolClient()
+  const client = new MemoryLabToolClient({sessionQuery: ctx.sessionQuery})
   ctx.tools.register(uploadDefinition(client))
   ctx.tools.register(attachmentUploadDefinition(client))
+  ctx.tools.register(pageActionDefinition(client))
+  ctx.tools.register(pageActionResultDefinition(client))
   for (const item of TOOLS) ctx.tools.register(definition(client, item))
   ctx.effect(() => () => client.close(), 'memorylab-data-tools lifecycle')
 }

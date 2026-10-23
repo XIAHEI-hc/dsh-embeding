@@ -69,6 +69,19 @@ def test_runner_workspace_requires_seed_directory(tmp_path):
         initialize_runner_workspace(tmp_path / "workspace", tmp_path / "missing", "runner")
 
 
+@pytest.mark.parametrize('name', ['gateway.env', '.env', '.env.production', 'runtime-secrets.json', 'model.key'])
+def test_runner_workspace_rejects_control_seed_before_copying(tmp_path, name):
+    seed = tmp_path / 'seed'
+    seed.mkdir()
+    (seed / 'README.md').write_text('ordinary content')
+    (seed / name).write_text('test-only placeholder')
+    workspace = tmp_path / 'workspace'
+    with pytest.raises(RuntimeError, match='deployment'):
+        initialize_runner_workspace(workspace, seed, 'runner')
+    assert list(workspace.iterdir()) == []
+    assert (seed / name).exists()
+
+
 def test_model_secret_file_is_injected_without_exposing_file_contents(tmp_path):
     secret_file = tmp_path / "deepseek-api-key"
     secret_file.write_text("  key-for-runner-a\n", encoding="utf-8")
